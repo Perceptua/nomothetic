@@ -5,6 +5,11 @@ __author__ = "Perceptua"
 
 from .camera import Camera
 
-__all__ = ["Camera"]
+try:
+    from .streaming import StreamServer
+    __all__ = ["Camera", "StreamServer"]
+except ImportError:
+    # Flask not installed, streaming not available
+    __all__ = ["Camera"]
 
 

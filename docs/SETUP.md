@@ -97,6 +97,66 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 - Path traversal attack prevention
 - Filename validation (separators, absolute paths, traversal)
 
+### Phase 1.5: Camera Web Streaming ✅ COMPLETE
+
+**Implementation Complete**
+- ✅ Architecture: MJPEG over HTTP (multipart/x-mixed-replace)
+- ✅ Optional dependency strategy: Flask in `[web]` optional group
+- ✅ API design: `StreamServer` class with `start()` and `start_background()` methods
+- ✅ Code implementation with full type hints and docstrings
+- ✅ 14 comprehensive tests (all passing)
+- ✅ HTML viewer page with responsive CSS
+- ✅ Documentation and usage examples in SETUP.md
+
+**StreamServer Class** (`src/nomon/streaming.py`)
+- Access at `http://localhost:8000` (default, configurable)
+- Endpoints:
+  - `GET /` - HTML page with live stream viewer
+  - `GET /stream` - MJPEG stream (multipart/x-mixed-replace)
+- Thread-safe frame sharing from Camera to HTTP response
+- Constructor parameters: host, port, camera_index, width, height, fps, encoder
+- Full type hints and docstrings
+- Security: localhost binding by default, port validation
+- Methods:
+  - `start()` - Run server (blocking)
+  - `start_background()` - Run server in daemon thread
+  - `close()` - Clean up camera resources
+
+**HTML Viewer Page**
+- Simple HTML with embedded CSS styling
+- `<img>` tag pointed to `/stream` endpoint for continuous playback
+- Displays camera resolution, frame rate, and encoder type
+- Responsive layout for mobile and desktop viewing
+- Dark theme for comfortable streaming experience
+
+**Test Coverage** (14 tests)
+- Server initialization with defaults and custom parameters
+- Port validation (valid range 1-65535)
+- Flask availability check (RuntimeError when not installed)
+- Route registration (/ and /stream endpoints)
+- HTML template rendering with correct parameters
+- MJPEG stream endpoint configuration (multipart/x-mixed-replace mimetype)
+- Server lifecycle (start, background thread, close)
+- Camera integration and cleanup
+- Debug mode handling
+
+**Dependencies**
+- Flask >= 2.0 in `[web]` optional dependencies
+- Installation: `pip install nomon[web]` or `uv add ".[web]"`
+- Not required for core camera functionality
+
+**Rationale**
+- MJPEG chosen for compatibility and simplicity:
+  - Works in any browser without plugins or external libraries
+  - No transcoding needed (Camera.get_frame_generator provides frames)
+  - Simple multipart/x-mixed-replace HTTP protocol
+  - Suitable for LAN verification on local network
+- Flask chosen for minimal overhead:
+  - Single-purpose streaming server (two endpoints)
+  - No complex configuration required
+  - Cross-platform (development on Windows/Mac, production on RPi)
+  - Optional dependency keeps nomon lightweight for users who don't need streaming
+
 ### Phase 2: Remote Microcontroller Operations (Next)
 - Communication protocol design (HTTP, WebSocket, MQTT, etc.)
 - Secure credential management
@@ -143,13 +203,52 @@ with Camera() as cam:
     # Automatic cleanup on exit
 ```
 
+### Using the Web Streaming Server
+```python
+from nomon.streaming import StreamServer
+
+# Start streaming server
+server = StreamServer(
+    host="localhost",
+    port=8000,
+    width=1280,
+    height=720,
+    fps=30,
+    encoder="h264"
+)
+
+# Navigate to http://localhost:8000 in your browser
+server.start()  # This blocks until server is stopped (Ctrl+C)
+```
+
+Or run in background:
+```python
+from nomon.streaming import StreamServer
+
+server = StreamServer()
+thread = server.start_background()
+
+# ... do other work while server runs ...
+
+server.close()  # Clean up when done
+```
+
 ### Development Environment
 ```bash
-# Install with dev dependencies
-make install-dev
+# Install with dev dependencies (no web streaming)
+uv add . --dev
 
-# Or with pip directly
+# Or with pip
 pip install -e ".[dev]"
+```
+
+### With Web Streaming Support
+```bash
+# Install with dev and web dependencies
+uv add ".[dev,web]"
+
+# Or with pip
+pip install -e ".[dev,web]"
 ```
 
 ### Running Tests

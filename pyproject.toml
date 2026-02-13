@@ -49,6 +49,9 @@ docs = [
     "sphinx>=5.0",
     "sphinx-rtd-theme>=1.0",
 ]
+web = [
+    "flask>=2.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/Perceptua/nomon"
