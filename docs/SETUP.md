@@ -5,11 +5,31 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 
 ---
 
+## Project Architecture
+
+### Remote Devices
+- **Raspberry Pi Microcontrollers with HAT** - A small fleet of independent automatons
+  - Python >= 3.9 support
+  - Runs nomon app (HTTPS REST w/ secure authentication)
+  - Telemetry published via MQTT
+  - OTA updates
+  - Admin via Tailscale & SSH
+
+### User Mobile Application
+- To be developed elsewhere
+
+### Centralized Device Management
+- **Python web server**
+  - MQTT broker for telemetry logging & notifications
+  - API endpoint for version manifest
+  - Object storage via s3 for release artifacts
+
+
 ## ✅ Setup Completed
 
 ### Core Configuration Files
 - **pyproject.toml** - Complete project metadata, dependencies, and tool configurations
-  - Python >= 3.8 support
+  - Python >= 3.9 support
   - Configured for setuptools build system
   - Tool configs for black, ruff, mypy, pytest
 
@@ -157,58 +177,14 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
   - Cross-platform (development on Windows/Mac, production on RPi)
   - Optional dependency keeps nomon lightweight for users who don't need streaming
 
-### Phase 2: Remote Microcontroller Operations ✅ COMPLETE
-
-**Communication Protocol Foundation** (`src/nomon/protocol.py`)
-
-**Protocol Design**
-- ✅ JSON-based message protocol (newline-delimited)
-- ✅ Three message types: CommandMessage, ResponseMessage, NotificationMessage
-- ✅ UUID-based request/response matching
-- ✅ Transport-agnostic (works over TCP, HTTP, WebSocket, etc.)
-- ✅ Mobile and web-friendly
-
-**Message Types**
-- `CommandMessage` - Client requests to execute camera operations
-  - Fields: command, params, msg_id
-  - Commands: capture_image, start_recording, stop_recording, get_status
-- `ResponseMessage` - Server responses with result or error
-  - Fields: status (success/error), data, error message, msg_id
-- `NotificationMessage` - Future event notifications
-  - Fields: event name, data, msg_id
-
-**Message Serialization** (`MessageHandler`)
-- ✅ JSON encoding/decoding with validation
-- ✅ Message type detection and routing
-- ✅ Round-trip serialization (serialize → parse → serialize)
-- ✅ Comprehensive error messages for invalid messages
-
-**Test Coverage** (27 tests)
-- Message creation and validation
-- Serialization and deserialization
-- Round-trip encoding verification
-- Error handling for malformed JSON/messages
-- All transport-independent protocol concerns
-
-**Why TCP Server/Client Were Removed**
-- Not needed for your workflow: Tailscale + SSH for admin, HTTP for mobile
-- Protocol contracts preserved for Phase 3 HTTP REST wrapper
-- Cleaner codebase with less unused code
-- Protocol abstraction remains reusable for any transport
-
-**Documentation**
-- ✅ Protocol specification and message contracts
-- ✅ Usage examples and patterns
-- ✅ Integration notes for Phase 3
-
-### Phase 3: HTTP REST API & Authentication (Next)
-- HTTP REST wrapper around Phase 2 protocol
+### Phase 2: HTTP REST API & Authentication (Next)
+- HTTPS REST endpoints for camera control
 - TLS/SSL encryption
 - JWT token or API key authentication
 - CORS support for web and mobile clients
 - Mobile app ready
 
-### Phase 4: HAT Control & Peripherals (Future)
+### Phase 3: HAT Control & Peripherals (Future)
 - Identify specific HAT module(s)
 - Implement driver/interface layers
 - Sensor integration and actuator control
@@ -279,18 +255,7 @@ thread = server.start_background()
 server.close()  # Clean up when done
 ```
 
-### Remote Camera Control (Phase 2 - Protocol Foundation Only)
-
-The Phase 2 communication protocol (`CommandMessage`, `ResponseMessage`, etc.) is available for reference and serves as the contract for Phase 3's HTTP REST API.
-
-The raw TCP server/client implementation was removed as they won't be used in your workflow:
-- **Admin access** uses Tailscale + SSH
-- **Mobile apps** will use HTTP REST API (Phase 3)
-- **Local development** uses direct Python imports
-
-Phase 3 will build the HTTP REST wrapper that implements these protocol message contracts.
-
-
+### Development Environment
 ```bash
 # Install with dev dependencies (no web streaming)
 uv add . --dev
@@ -314,6 +279,8 @@ make test           # Run with coverage report
 pytest tests/ -v    # Verbose test output
 ```
 
+**Note:** Tests requiring hardware (camera, GPIO) should be run on the Raspberry Pi. Tests for protocol modules can run anywhere. Hardware-dependent tests will be skipped on systems without required dependencies.
+
 ### Code Quality
 ```bash
 make format         # Format code with black & ruff
@@ -330,7 +297,7 @@ spidev and picamera2 will automatically install when dependencies are installed 
 
 **Keep this codebase minimal.** Let the standard library and imported packages do the heavy lifting. This repo should be focused on **interacting with a microcontroller & peripherals** rather than defining broad patterns for such interactions.
 
-- Cross-platform development: Code works on Windows/Mac for testing, hardware-ready on RPi
+- **Testing strategy:** Run tests on the Raspberry Pi where hardware is required. Transport-agnostic modules (like protocol) can run anywhere.
 - All tool configurations (black, ruff, mypy) are pre-configured in pyproject.toml
 - Test infrastructure ready for unit and integration tests
 - Security is built-in: filename validation prevents path traversal and directory escape attacks
