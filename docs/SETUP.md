@@ -159,31 +159,23 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 
 ### Phase 2: Remote Microcontroller Operations ✅ COMPLETE
 
-**Communication Protocol Implementation** (`src/nomon/protocol.py`, `src/nomon/server.py`, `src/nomon/client.py`)
+**Communication Protocol Foundation** (`src/nomon/protocol.py`)
 
 **Protocol Design**
 - ✅ JSON-based message protocol (newline-delimited)
 - ✅ Three message types: CommandMessage, ResponseMessage, NotificationMessage
 - ✅ UUID-based request/response matching
-- ✅ Cross-platform compatibility (Windows, Linux, macOS)
-- ✅ No external network library dependencies (uses stdlib `socket`)
+- ✅ Transport-agnostic (works over TCP, HTTP, WebSocket, etc.)
+- ✅ Mobile and web-friendly
 
-**Server Implementation** (`CommandServer`)
-- ✅ TCP server listening on port 5555 (configurable)
-- ✅ Supports blocking (`start()`) and background mode (`start_background()`)
-- ✅ Command execution: capture_image, start_recording, stop_recording, get_status
-- ✅ Status reporting: camera configuration, recording state
-- ✅ Error handling with detailed error messages
-- ✅ Thread-safe client connection handling
-- ✅ Graceful shutdown and resource cleanup
-
-**Client Implementation** (`CameraClient`)
-- ✅ High-level API: `capture_image()`, `start_recording()`, `stop_recording()`, `get_status()`
-- ✅ Automatic message serialization and parsing
-- ✅ Connection management with timeout support
-- ✅ Context manager support (`with` statement)
-- ✅ Error propagation with readable error messages
-- ✅ Windows PC compatibility (fully testable without hardware)
+**Message Types**
+- `CommandMessage` - Client requests to execute camera operations
+  - Fields: command, params, msg_id
+  - Commands: capture_image, start_recording, stop_recording, get_status
+- `ResponseMessage` - Server responses with result or error
+  - Fields: status (success/error), data, error message, msg_id
+- `NotificationMessage` - Future event notifications
+  - Fields: event name, data, msg_id
 
 **Message Serialization** (`MessageHandler`)
 - ✅ JSON encoding/decoding with validation
@@ -191,38 +183,23 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 - ✅ Round-trip serialization (serialize → parse → serialize)
 - ✅ Comprehensive error messages for invalid messages
 
-**Test Coverage** (45 tests, 51% overall coverage)
-- Protocol Message Tests (27 tests)
-  - Command, Response, and Notification message creation
-  - Serialization and deserialization
-  - Round-trip encoding verification
-  - Error handling for malformed JSON/messages
-  - Message validation and type checking
-- Server Tests (9 tests)
-  - Command execution for all supported operations
-  - Missing parameter detection
-  - Exception handling
-  - Status reporting with correct camera info
-- Client Tests (9 tests)
-  - Connection success and failure
-  - Command sending and response parsing
-  - Error response propagation
-  - Context manager lifecycle
-  - Timeout handling
-  - All high-level methods (capture, recording, status)
+**Test Coverage** (27 tests)
+- Message creation and validation
+- Serialization and deserialization
+- Round-trip encoding verification
+- Error handling for malformed JSON/messages
+- All transport-independent protocol concerns
 
-**Testing on Windows PC**
-- ✅ All tests run on Windows without Raspberry Pi hardware
-- ✅ picamera2 mocked at module import
-- ✅ Socket communication mocked for client/server tests
-- ✅ Can be extended with real network tests once Pi is online
+**Why TCP Server/Client Were Removed**
+- Not needed for your workflow: Tailscale + SSH for admin, HTTP for mobile
+- Protocol contracts preserved for Phase 3 HTTP REST wrapper
+- Cleaner codebase with less unused code
+- Protocol abstraction remains reusable for any transport
 
 **Documentation**
-- ✅ PHASE2_COMMUNICATION.md - Complete protocol specification
-- ✅ Usage examples for client and server
-- ✅ Deployment checklist
-- ✅ Troubleshooting guide
-- ✅ Future enhancement ideas
+- ✅ Protocol specification and message contracts
+- ✅ Usage examples and patterns
+- ✅ Integration notes for Phase 3
 
 ### Phase 3: HTTP REST API & Authentication (Next)
 - HTTP REST wrapper around Phase 2 protocol
@@ -302,72 +279,16 @@ thread = server.start_background()
 server.close()  # Clean up when done
 ```
 
-### Using Remote Camera Control (Phase 2)
+### Remote Camera Control (Phase 2 - Protocol Foundation Only)
 
-**On Raspberry Pi (Server)**
-```python
-from nomon.server import CommandServer
+The Phase 2 communication protocol (`CommandMessage`, `ResponseMessage`, etc.) is available for reference and serves as the contract for Phase 3's HTTP REST API.
 
-# Start command server listening for client requests
-server = CommandServer(
-    host="0.0.0.0",  # Accept connections from any IP
-    port=5555,       # Default port
-    width=1280,
-    height=720,
-    fps=30,
-    encoder="h264"
-)
+The raw TCP server/client implementation was removed as they won't be used in your workflow:
+- **Admin access** uses Tailscale + SSH
+- **Mobile apps** will use HTTP REST API (Phase 3)
+- **Local development** uses direct Python imports
 
-# Block and listen for client commands
-server.start()
-
-# Or run in background
-# server.start_background()
-# ... other work ...
-# server.close()
-```
-
-**On Windows PC (Client)**
-```python
-from nomon import CameraClient
-
-# Connect to the Raspberry Pi server
-client = CameraClient("192.168.1.100", port=5555)
-client.connect()
-
-# Send commands and get responses
-try:
-    # Capture an image
-    result = client.capture_image("photo.jpg")
-    print(f"Captured: {result['filename']}")
-    
-    # Record a video
-    client.start_recording("video.h264")
-    # ... recording for a while ...
-    client.stop_recording()
-    
-    # Check camera status
-    status = client.get_status()
-    print(f"Recording: {status['is_recording']}")
-    
-except RuntimeError as e:
-    print(f"Camera error: {e}")
-finally:
-    client.close()
-```
-
-**Using Context Manager (Recommended)**
-```python
-from nomon import CameraClient
-
-# Automatic connection and cleanup
-with CameraClient("192.168.1.100") as client:
-    client.capture_image("snap.jpg")
-    client.start_recording("video.h264")
-    # ... do other work ...
-    client.stop_recording()
-    # Automatically closes on exit
-```
+Phase 3 will build the HTTP REST wrapper that implements these protocol message contracts.
 
 
 ```bash
