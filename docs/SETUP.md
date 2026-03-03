@@ -192,7 +192,7 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 - `POST /api/camera/capture` - Capture still image (requires filename)
 - `POST /api/camera/record/start` - Start video recording (requires filename, optional encoder)
 - `POST /api/camera/record/stop` - Stop video recording
-- Automatic OpenAPI docs at `GET /docs` and `GET/redoc`
+- Automatic OpenAPI docs at `GET /docs` and `GET /redoc`
 
 **Technology Stack**
 - FastAPI >= 0.100 (modern REST framework, automatic OpenAPI)
