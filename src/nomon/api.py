@@ -16,6 +16,7 @@ create_self_signed_cert
     Generate self-signed TLS certificates for development/testing.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -372,7 +373,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="No recording in progress")
 
         try:
-            _camera.stop_recording()
+            await asyncio.to_thread(_camera.stop_recording)
             return RecordStopResponse(
                 success=True,
                 timestamp=datetime.now(timezone.utc).isoformat(),
