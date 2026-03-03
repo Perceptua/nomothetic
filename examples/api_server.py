@@ -8,9 +8,6 @@ Requirements:
     pip install nomon[api]
 """
 
-import time
-from pathlib import Path
-
 # ============================================================================
 # Example 1: Start API server locally (HTTPS)
 # ============================================================================
