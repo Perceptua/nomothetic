@@ -17,6 +17,7 @@ create_self_signed_cert
 """
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -196,12 +197,18 @@ def create_self_signed_cert(cert_path: Path, key_path: Path) -> None:
 _camera: Optional[Camera] = None
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage camera initialization and cleanup."""
     global _camera
     # Startup: Initialize camera
-    _camera = Camera()
+    try:
+        _camera = Camera()
+    except RuntimeError as e:
+        logger.warning("Camera initialization failed; API will run without camera: %s", e)
     yield
     # Shutdown: Cleanup
     if _camera:
