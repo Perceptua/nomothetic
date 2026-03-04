@@ -336,7 +336,7 @@ def create_app() -> FastAPI:
             if request.encoder and request.encoder.lower() in ["h264", "mjpeg"]:
                 _camera.encoder = request.encoder.lower()
 
-            _camera.start_recording(request.filename)
+            await asyncio.to_thread(_camera.start_recording, request.filename)
             return RecordStartResponse(
                 success=True,
                 filename=request.filename,
