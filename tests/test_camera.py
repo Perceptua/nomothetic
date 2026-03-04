@@ -23,7 +23,7 @@ mock_picamera2_module.encoders = mock_encoders
 sys.modules["picamera2"] = mock_picamera2_module
 sys.modules["picamera2.encoders"] = mock_encoders
 
-from nomon.camera import Camera
+from nomon.camera import Camera  # noqa: E402
 
 
 class TestCameraInitialization:
@@ -66,9 +66,7 @@ class TestCameraInitialization:
     @patch("nomon.camera.Picamera2")
     def test_camera_init_failure(self, mock_picamera2):
         """Test camera initialization failure."""
-        mock_picamera2.side_effect = Exception(
-            "Camera not found"
-        )
+        mock_picamera2.side_effect = Exception("Camera not found")
 
         with pytest.raises(RuntimeError):
             Camera()
@@ -343,6 +341,7 @@ class TestFrameGenerator:
         with pytest.raises(RuntimeError):
             next(camera.get_frame_generator())
 
+
 class TestJPEGFrameGenerator:
     """Tests for JPEG frame streaming functionality."""
 
@@ -395,7 +394,7 @@ class TestJPEGFrameGenerator:
         mock_cam = MagicMock()
         mock_picamera2.return_value = mock_cam
         mock_cam.create_still_configuration.return_value = {}
-        mock_cam.capture_file.side_effect = IOError("Capture failed")
+        mock_cam.capture_file.side_effect = OSError("Capture failed")
 
         camera = Camera()
         gen = camera.get_jpeg_frame_generator()

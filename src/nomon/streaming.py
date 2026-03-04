@@ -10,9 +10,7 @@ StreamServer
     HTTP server for serving live camera MJPEG stream.
 """
 
-import io
 import threading
-from pathlib import Path
 from typing import Optional
 
 try:
@@ -24,7 +22,6 @@ except ImportError:
 
 from .camera import Camera
 
-
 # HTML template for the viewer page
 VIEWER_TEMPLATE = """
 <!DOCTYPE html>
@@ -35,7 +32,7 @@ VIEWER_TEMPLATE = """
     <title>nomon Camera Stream</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
                          Roboto, 'Helvetica Neue', Arial, sans-serif;
             display: flex;
             justify-content: center;
@@ -160,15 +157,10 @@ class StreamServer:
             If port is not in valid range (1-65535)
         """
         if Flask is None:
-            raise RuntimeError(
-                "Flask not available. "
-                "Install with: pip install 'nomon[web]'"
-            )
+            raise RuntimeError("Flask not available. " "Install with: pip install 'nomon[web]'")
 
         if not 1 <= port <= 65535:
-            raise ValueError(
-                f"Port must be between 1 and 65535, got {port}"
-            )
+            raise ValueError(f"Port must be between 1 and 65535, got {port}")
 
         self.host = host
         self.port = port
@@ -228,9 +220,7 @@ class StreamServer:
                     # Wrap each frame in MJPEG boundary
                     boundary = b"--frame"
                     content_type = b"Content-Type: image/jpeg"
-                    content_length = b"Content-Length: " + str(
-                        len(jpeg_frame)
-                    ).encode()
+                    content_length = b"Content-Length: " + str(len(jpeg_frame)).encode()
                     crlf = b"\r\n"
 
                     yield boundary + crlf

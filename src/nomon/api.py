@@ -17,8 +17,9 @@ create_self_signed_cert
 """
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -28,6 +29,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nomon.camera import Camera
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Data Models
@@ -116,6 +119,8 @@ def create_self_signed_cert(cert_path: Path, key_path: Path) -> None:
         If cryptography package is not installed
     """
     try:
+        from ipaddress import IPv4Address
+
         from cryptography import x509
         from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives import hashes, serialization
@@ -157,14 +162,12 @@ def create_self_signed_cert(cert_path: Path, key_path: Path) -> None:
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.now(timezone.utc))
-        .not_valid_after(
-            datetime.now(timezone.utc).replace(year=datetime.now(timezone.utc).year + 10)
-        )
+        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365 * 10))
         .add_extension(
             x509.SubjectAlternativeName(
                 [
                     x509.DNSName("localhost"),
-                    x509.DNSName("127.0.0.1"),
+                    x509.IPAddress(IPv4Address("127.0.0.1")),
                 ]
             ),
             critical=False,
@@ -196,12 +199,18 @@ def create_self_signed_cert(cert_path: Path, key_path: Path) -> None:
 _camera: Optional[Camera] = None
 
 
+logger = logging.getLogger(__name__)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage camera initialization and cleanup."""
     global _camera
     # Startup: Initialize camera
-    _camera = Camera()
+    try:
+        _camera = Camera()
+    except RuntimeError as e:
+        logger.warning("Camera initialization failed; API will run without camera: %s", e)
     yield
     # Shutdown: Cleanup
     if _camera:
@@ -304,9 +313,7 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Capture failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Capture failed: {str(e)}") from e
 
     @app.post("/api/camera/record/start", response_model=RecordStartResponse, tags=["Camera"])
     async def start_recording(request: RecordRequest):
@@ -338,7 +345,7 @@ def create_app() -> FastAPI:
             if request.encoder and request.encoder.lower() in ["h264", "mjpeg"]:
                 _camera.encoder = request.encoder.lower()
 
-            _camera.start_recording(request.filename)
+            await asyncio.to_thread(_camera.start_recording, request.filename)
             return RecordStartResponse(
                 success=True,
                 filename=request.filename,
@@ -348,9 +355,7 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Recording start failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Recording start failed: {str(e)}") from e
 
     @app.post("/api/camera/record/stop", response_model=RecordStopResponse, tags=["Camera"])
     async def stop_recording():
@@ -380,9 +385,7 @@ def create_app() -> FastAPI:
                 message="Recording stopped",
             )
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Recording stop failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Recording stop failed: {str(e)}") from e
 
     # Global exception handler
     @app.exception_handler(HTTPException)
@@ -488,7 +491,7 @@ class APIServer:
 
         config = self.get_config()
         protocol = "https" if self.use_ssl else "http"
-        print(f"Starting API server at {protocol}://{self.host}:{self.port}")
+        logger.info("Starting API server at %s://%s:%s", protocol, self.host, self.port)
         uvicorn.run(**config)
 
     def start_background(self):

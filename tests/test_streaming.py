@@ -27,7 +27,7 @@ mock_flask_module.render_template_string = MagicMock()
 
 sys.modules["flask"] = mock_flask_module
 
-from nomon.streaming import StreamServer
+from nomon.streaming import StreamServer  # noqa: E402
 
 
 class TestStreamServerInitialization:
@@ -105,9 +105,7 @@ class TestStreamServerInitialization:
     @patch("nomon.streaming.Flask", None)
     def test_server_init_flask_not_available(self):
         """Test server initialization when Flask is not available."""
-        with pytest.raises(
-            RuntimeError, match="Flask not available"
-        ):
+        with pytest.raises(RuntimeError, match="Flask not available"):
             StreamServer()
 
     @patch("nomon.streaming.Camera")
@@ -162,18 +160,14 @@ class TestStreamServerViewerPage:
     @patch("nomon.streaming.render_template_string")
     @patch("nomon.streaming.Camera")
     @patch("nomon.streaming.Flask")
-    def test_viewer_renders_template(
-        self, mock_flask, mock_camera, mock_render
-    ):
+    def test_viewer_renders_template(self, mock_flask, mock_camera, mock_render):
         """Test that viewer endpoint renders template."""
         mock_app = MagicMock()
         mock_flask.return_value = mock_app
         mock_camera.return_value = MagicMock()
         mock_render.return_value = "<html>test</html>"
 
-        server = StreamServer(
-            width=1920, height=1080, fps=24, encoder="mjpeg"
-        )
+        server = StreamServer(width=1920, height=1080, fps=24, encoder="mjpeg")
 
         # Call the viewer method directly
         result = server._viewer()
@@ -195,9 +189,7 @@ class TestStreamServerMJPEGStream:
     @patch("nomon.streaming.Response")
     @patch("nomon.streaming.Camera")
     @patch("nomon.streaming.Flask")
-    def test_stream_endpoint_returns_response(
-        self, mock_flask, mock_camera, mock_response
-    ):
+    def test_stream_endpoint_returns_response(self, mock_flask, mock_camera, mock_response):
         """Test that stream endpoint returns Flask Response."""
         mock_app = MagicMock()
         mock_flask.return_value = mock_app
@@ -205,14 +197,12 @@ class TestStreamServerMJPEGStream:
         mock_camera.return_value = mock_cam
 
         # Mock the frame generator
-        mock_cam.get_frame_generator.return_value = iter(
-            [b"frame1", b"frame2"]
-        )
+        mock_cam.get_frame_generator.return_value = iter([b"frame1", b"frame2"])
 
         server = StreamServer()
 
         # Call the stream endpoint
-        response = server._stream_endpoint()
+        server._stream_endpoint()
 
         # Verify Response was called with correct mimetype
         assert mock_response.called
@@ -222,9 +212,7 @@ class TestStreamServerMJPEGStream:
 
     @patch("nomon.streaming.Camera")
     @patch("nomon.streaming.Flask")
-    def test_stream_endpoint_frame_format(
-        self, mock_flask, mock_camera
-    ):
+    def test_stream_endpoint_frame_format(self, mock_flask, mock_camera):
         """Test that stream endpoint returns Response object."""
         mock_app = MagicMock()
         mock_flask.return_value = mock_app
@@ -233,9 +221,7 @@ class TestStreamServerMJPEGStream:
 
         # Create mock frame data
         frame_data = b"fake_jpeg_data"
-        mock_cam.get_frame_generator.return_value = iter(
-            [frame_data]
-        )
+        mock_cam.get_frame_generator.return_value = iter([frame_data])
 
         server = StreamServer()
 

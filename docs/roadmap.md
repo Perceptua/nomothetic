@@ -8,7 +8,7 @@
 | 1.5 | MJPEG Stream Server | ✅ Complete |
 | 2 | HTTPS REST API | ✅ Complete |
 | 2.5 | Auth & Rate Limiting | 🔲 Optional / Deferred |
-| 3 | MQTT Telemetry | 🔲 Next |
+| 3 | MQTT Telemetry | ✅ Complete |
 | 4 | OTA Update Mechanism | 🔲 Planned |
 | 5 | HAT Module Driver | 🔲 Planned |
 
@@ -61,6 +61,22 @@
 
 ---
 
+### Phase 3 — MQTT Telemetry (`nomon.telemetry`)
+
+**Deliverables:**
+- `TelemetryPublisher` class using `paho-mqtt` 2.x
+- Background daemon thread (non-blocking, REST API unaffected)
+- Structured JSON telemetry payload (device ID, camera status, nomon version, UTC timestamp)
+- Configurable broker host/port/topic/interval via `.env` (`NOMON_MQTT_*`)
+- Device ID auto-detection: env var → `/proc/cpuinfo` Pi serial → hostname
+- Reconnect/retry with exponential back-off (1 s → 60 s cap)
+- Optional dependency: `paho-mqtt` in `[telemetry]` group
+- 23 passing tests
+
+**Test totals: 86 passing (20 camera + 14 streaming + 26 API + 3 integration + 23 telemetry)**
+
+---
+
 ## Upcoming Phases
 
 ### Phase 2.5 — Authentication & Rate Limiting (Optional)
@@ -79,25 +95,6 @@ Adds security layers on top of the existing API. Can be deferred since Tailscale
 - Consider `fastapi-users` or hand-rolled JWT with `python-jose`/`authlib`
 - Rate limiting via `slowapi` (wraps `limits`)
 - Log to file; Phase 3 MQTT can forward logs to management server
-
----
-
-### Phase 3 — MQTT Telemetry
-
-**Purpose:** Each Pi publishes structured telemetry to the centralized management server for monitoring, logging, and alerting.
-
-**Candidate deliverables:**
-- [ ] `nomon.telemetry` module using `paho-mqtt`
-- [ ] Background publisher thread (non-blocking, daemon)
-- [ ] Structured JSON telemetry payload (device ID, camera status, timestamps)
-- [ ] Configurable broker host/port/topic via `.env`
-- [ ] Reconnect/retry logic with exponential backoff
-- [ ] Management server receives and stores telemetry (separate repository)
-
-**Design constraints:**
-- Publisher must not block the REST API
-- Must handle broker unavailability gracefully
-- Device ID derived from Pi serial number or `.env`
 
 ---
 

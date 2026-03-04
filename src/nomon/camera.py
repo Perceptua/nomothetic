@@ -16,7 +16,7 @@ Camera
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 try:
     from picamera2 import Picamera2
@@ -70,7 +70,7 @@ class Camera:
         height: int = 720,
         fps: int = 30,
         encoder: str = "h264",
-        directory: Optional[str | Path] = None,
+        directory: Optional[Union[str, Path]] = None,
     ) -> None:
         """Initialize the camera.
 
@@ -106,28 +106,21 @@ class Camera:
             )
 
         if encoder not in ("h264", "mjpeg"):
-            raise ValueError(
-                f"encoder must be 'h264' or 'mjpeg', "
-                f"got '{encoder}'"
-            )
+            raise ValueError(f"encoder must be 'h264' or 'mjpeg', " f"got '{encoder}'")
 
         self.camera_index = camera_index
         self.width = width
         self.height = height
         self.fps = fps
         self.encoder = encoder
-        self.directory = (
-            Path(directory) if directory else Path.cwd()
-        )
+        self.directory = Path(directory) if directory else Path.cwd()
         self._camera = None
         self._is_recording = False
 
         try:
             self._camera = Picamera2(camera_index)
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to initialize camera {camera_index}: {e}"
-            )
+            raise RuntimeError(f"Failed to initialize camera {camera_index}: {e}") from e
 
     def _validate_filename(self, filename: str) -> Path:
         """Validate that filename is a plain filename.
@@ -154,28 +147,19 @@ class Camera:
         """
         # Reject absolute paths
         if Path(filename).is_absolute():
-            raise ValueError(
-                f"Filename cannot be absolute: {filename}"
-            )
+            raise ValueError(f"Filename cannot be absolute: {filename}")
 
         # Reject path separators
         if "/" in filename or "\\" in filename:
-            raise ValueError(
-                f"Filename cannot contain path separators: "
-                f"{filename}"
-            )
+            raise ValueError(f"Filename cannot contain path separators: " f"{filename}")
 
         # Reject traversal attempts (.. or . as components)
         if filename == ".." or filename == ".":
-            raise ValueError(
-                f"Filename cannot be '{filename}'"
-            )
+            raise ValueError(f"Filename cannot be '{filename}'")
 
         # Reject filenames starting with . (hidden files)
         if filename.startswith("."):
-            raise ValueError(
-                f"Filename cannot start with '.': {filename}"
-            )
+            raise ValueError(f"Filename cannot start with '.': {filename}")
 
         return self.directory / filename
 
@@ -205,10 +189,8 @@ class Camera:
         path = self._validate_filename(filename)
 
         try:
-            config = (
-                self._camera.create_still_configuration(
-                    main={"size": (self.width, self.height)}
-                )
+            config = self._camera.create_still_configuration(
+                main={"size": (self.width, self.height)}
             )
             self._camera.configure(config)
             self._camera.start()
@@ -217,9 +199,7 @@ class Camera:
         except ValueError:
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"Image capture failed: {e}"
-            )
+            raise RuntimeError(f"Image capture failed: {e}") from e
 
     def start_recording(self, filename: str) -> None:
         """Start recording video to a file.
@@ -250,11 +230,9 @@ class Camera:
         path = self._validate_filename(filename)
 
         try:
-            config = (
-                self._camera.create_video_configuration(
-                    main={"size": (self.width, self.height)},
-                    encode="main",
-                )
+            config = self._camera.create_video_configuration(
+                main={"size": (self.width, self.height)},
+                encode="main",
             )
             self._camera.configure(config)
             self._camera.start()
@@ -278,9 +256,7 @@ class Camera:
         except ValueError:
             raise
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to start recording: {e}"
-            )
+            raise RuntimeError(f"Failed to start recording: {e}") from e
 
     def stop_recording(self) -> None:
         """Stop the current video recording.
@@ -293,14 +269,15 @@ class Camera:
         if not self._is_recording:
             raise RuntimeError("Camera is not recording")
 
+        if self._camera is None:
+            raise RuntimeError("Camera not initialized")
+
         try:
             self._camera.stop_recording()
             self._camera.stop()
             self._is_recording = False
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to stop recording: {e}"
-            )
+            raise RuntimeError(f"Failed to stop recording: {e}") from e
 
     def get_frame_generator(self):
         """Get a generator that yields camera frames.
@@ -329,10 +306,8 @@ class Camera:
             raise RuntimeError("Camera not initialized")
 
         try:
-            config = (
-                self._camera.create_video_configuration(
-                    main={"size": (self.width, self.height)},
-                )
+            config = self._camera.create_video_configuration(
+                main={"size": (self.width, self.height)},
             )
             self._camera.configure(config)
             self._camera.start()
@@ -342,9 +317,7 @@ class Camera:
                 yield frame.tobytes()
 
         except Exception as e:
-            raise RuntimeError(
-                f"Streaming failed: {e}"
-            )
+            raise RuntimeError(f"Streaming failed: {e}") from e
         finally:
             if self._camera:
                 self._camera.stop()
@@ -393,9 +366,7 @@ class Camera:
                 yield jpeg_data
 
         except Exception as e:
-            raise RuntimeError(
-                f"JPEG streaming failed: {e}"
-            )
+            raise RuntimeError(f"JPEG streaming failed: {e}") from e
         finally:
             if self._camera:
                 self._camera.stop()

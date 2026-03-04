@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from nomon.api import create_app, APIServer
+from nomon.api import APIServer, create_app
 
 
 @pytest.fixture
@@ -355,8 +355,8 @@ def test_api_server_get_config():
 
 def test_api_server_get_config_with_ssl():
     """Test APIServer configuration with SSL."""
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmpdir:
         server = APIServer(port=8443, use_ssl=True, cert_dir=Path(tmpdir))
