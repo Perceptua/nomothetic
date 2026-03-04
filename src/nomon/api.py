@@ -30,6 +30,8 @@ from pydantic import BaseModel, Field
 
 from nomon.camera import Camera
 
+logger = logging.getLogger(__name__)
+
 # ============================================================================
 # Data Models
 # ============================================================================
@@ -489,7 +491,7 @@ class APIServer:
 
         config = self.get_config()
         protocol = "https" if self.use_ssl else "http"
-        print(f"Starting API server at {protocol}://{self.host}:{self.port}")
+        logger.info("Starting API server at %s://%s:%s", protocol, self.host, self.port)
         uvicorn.run(**config)
 
     def start_background(self):
