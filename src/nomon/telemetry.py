@@ -192,8 +192,12 @@ class TelemetryPublisher:
         self._stop_event.set()
         try:
             self._client.disconnect()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "Error while disconnecting MQTT client during telemetry stop: %s",
+                exc,
+                exc_info=True,
+            )
         logger.info("Telemetry publisher stop requested.")
 
     def publish_now(self) -> bool:
