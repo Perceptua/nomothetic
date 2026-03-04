@@ -5,11 +5,31 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 
 ---
 
+## Project Architecture
+
+### Remote Devices
+- **Raspberry Pi Microcontrollers with HAT** - A small fleet of independent automatons
+  - Python >= 3.9 support
+  - Runs nomon app (HTTPS REST w/ secure authentication)
+  - Telemetry published via MQTT
+  - OTA updates
+  - Admin via Tailscale & SSH
+
+### User Mobile Application
+- To be developed elsewhere
+
+### Centralized Device Management
+- **Python web server**
+  - MQTT broker for telemetry logging & notifications
+  - API endpoint for version manifest
+  - Object storage via s3 for release artifacts
+
+
 ## ✅ Setup Completed
 
 ### Core Configuration Files
 - **pyproject.toml** - Complete project metadata, dependencies, and tool configurations
-  - Python >= 3.8 support
+  - Python >= 3.9 support
   - Configured for setuptools build system
   - Tool configs for black, ruff, mypy, pytest
 
@@ -157,10 +177,110 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
   - Cross-platform (development on Windows/Mac, production on RPi)
   - Optional dependency keeps nomon lightweight for users who don't need streaming
 
-### Phase 2: Remote Microcontroller Operations (Next)
-- Communication protocol design (HTTP, WebSocket, MQTT, etc.)
-- Secure credential management
-- Error handling for network reliability
+### Phase 2: HTTP REST API & Authentication ✅ COMPLETE
+
+**REST API Implementation** (`src/nomon/api.py`)
+- ✅ FastAPI-based REST server with automatic OpenAPI documentation
+- ✅ HTTPS/TLS support with self-signed certificate generation
+- ✅ CORS middleware for web and mobile client compatibility
+- ✅ Mobile-ready JSON request/response format
+- ✅ 30+ comprehensive tests (all passing)
+
+**Endpoints Implemented**
+- `GET /` - Health check endpoint
+- `GET /api/camera/status` - Get camera state (resolution, fps, encoder, recording status)
+- `POST /api/camera/capture` - Capture still image (requires filename)
+- `POST /api/camera/record/start` - Start video recording (requires filename, optional encoder)
+- `POST /api/camera/record/stop` - Stop video recording
+- Automatic OpenAPI docs at `GET /docs` and `GET /redoc`
+
+**Technology Stack**
+- FastAPI >= 0.100 (modern REST framework, automatic OpenAPI)
+- uvicorn >= 0.24 (ASGI server with native SSL/TLS support)
+- python-multipart >= 0.0.6 (request parsing)
+- cryptography >= 41.0 (self-signed certificate generation)
+- python-dotenv >= 1.0 (environment configuration)
+
+**Security & Encryption**
+- HTTPS enabled by default with self-signed certificates
+- Self-signed certs auto-generated in `.certs/` directory on first run
+- TLS certificates valid for 10 years (suitable for development and deployment)
+- Filename validation prevents path traversal attacks (inherited from Camera module)
+- CORS configured for mobile clients (origin: `*` in development)
+
+**Response Format (JSON)**
+All responses include timestamp and structured error handling:
+```json
+{
+  "success": true,
+  "filename": "photo.jpg",
+  "timestamp": "2024-02-17T10:30:00.123456",
+  "message": "Image captured successfully"
+}
+```
+
+Errors use standard HTTP status codes:
+- 400 - Bad request (invalid filename)
+- 409 - Conflict (recording already in progress)
+- 500 - Server error (camera initialization failed)
+
+**Mobile-Ready Features**
+- JSON API suitable for iOS, Android, and web clients
+- CORS headers configured for cross-origin requests
+- Automatic OpenAPI documentation for client libraries
+- No session state required (stateless endpoints)
+- All endpoints return machine-readable JSON
+
+**Usage Example**
+```python
+from nomon.api import APIServer
+
+# Start HTTPS API server
+server = APIServer(
+    host="0.0.0.0",          # Listen on all interfaces
+    port=8443,                # HTTPS default port
+    use_ssl=True              # Enable TLS
+)
+
+# Navigate to https://localhost:8443/docs for interactive API docs
+server.run()  # Blocking call
+```
+
+Or run in background:
+```python
+from nomon.api import APIServer
+
+server = APIServer()
+thread = server.start_background()
+
+# ... do other work ...
+# server.run() or check /api/camera/status
+```
+
+**API Authentication (Deferred)**
+Authentication and authorization (JWT tokens, API keys) are deferred to Phase 2.5 to avoid complexity at this stage. The endpoints are currently open and suitable for private networks (Tailscale, local LAN, etc.) or behind a load balancer/reverse proxy with authentication.
+
+**Configuration**
+- Default: localhost only (`127.0.0.1:8443`)
+- Production: Use `host="0.0.0.0"` to listen on all interfaces
+- Custom ports: `APIServer(port=9000)`
+- SSL certificates auto-generated if missing
+
+**Deployment Note**
+For production deployment:
+1. Use `host="0.0.0.0"` to expose on the network
+2. Consider network isolation (Tailscale, VPN, or firewall rules)
+3. Replace self-signed certs with proper ones if accessing over untrusted networks
+4. Add authentication layer (Phase 2.5) for public deployments
+
+**Test Coverage** (30+ tests)
+- Health check and status endpoints
+- Image capture with valid/invalid filenames
+- Video recording start/stop/conflict scenarios
+- CORS header verification
+- Server configuration validation
+- Error response formatting
+- Request/response model validation
 
 ### Phase 3: HAT Control & Peripherals (Future)
 - Identify specific HAT module(s)
@@ -233,9 +353,99 @@ thread = server.start_background()
 server.close()  # Clean up when done
 ```
 
+### Using the REST API Server
+```python
+from nomon.api import APIServer
+
+# Start HTTPS REST API server (self-signed cert auto-generated)
+server = APIServer(
+    host="127.0.0.1",  # Local only
+    port=8443,         # HTTPS default
+    use_ssl=True       # Enable TLS
+)
+
+# Access:
+# - API docs: https://localhost:8443/docs
+# - Redoc: https://localhost:8443/redoc
+# - Status: GET https://localhost:8443/api/camera/status
+# - Capture: POST https://localhost:8443/api/camera/capture
+# - Record: POST https://localhost:8443/api/camera/record/start
+server.run()  # Blocking call (Ctrl+C to stop)
+```
+
+Or run in background:
+```python
+from nomon.api import APIServer
+
+server = APIServer(host="0.0.0.0")  # Listen on all interfaces
+thread = server.start_background()
+
+# ... server is running in background ...
+# Make requests to https://0.0.0.0:8443/api/...
+```
+
+For production on Raspberry Pi:
+```bash
+# Install with API support
+pip install -e ".[api]"
+
+# Run API server as systemd service, SSH tunnel, or behind Tailscale
+```
+
+**Example API Requests (using curl)**
+```bash
+# Health check
+curl https://localhost:8443/
+
+# Get camera status
+curl https://localhost:8443/api/camera/status
+
+# Capture image
+curl -X POST https://localhost:8443/api/camera/capture \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "photo.jpg"}'
+
+# Start recording
+curl -X POST https://localhost:8443/api/camera/record/start \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "video.mp4", "encoder": "h264"}'
+
+# Stop recording
+curl -X POST https://localhost:8443/api/camera/record/stop
+
+# Skip certificate verification (development only)
+curl -k https://localhost:8443/
+```
+
+**Example Python Client**
+```python
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# Disable SSL verification warning (dev only)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+api_url = "https://localhost:8443"
+
+# Get status
+status = requests.get(
+    f"{api_url}/api/camera/status",
+    verify=False  # Skip cert verification in dev
+).json()
+print(status)
+
+# Capture image
+response = requests.post(
+    f"{api_url}/api/camera/capture",
+    json={"filename": "photo.jpg"},
+    verify=False
+).json()
+print(response)
+```
+
 ### Development Environment
 ```bash
-# Install with dev dependencies (no web streaming)
+# Install with dev dependencies (no streaming or API)
 uv add . --dev
 
 # Or with pip
@@ -251,11 +461,31 @@ uv add ".[dev,web]"
 pip install -e ".[dev,web]"
 ```
 
+### With REST API Support
+```bash
+# Install with dev and API dependencies
+uv add ".[dev,api]"
+
+# Or with pip
+pip install -e ".[dev,api]"
+```
+
+### With Everything
+```bash
+# Install all features: streaming, REST API, and dev tools
+uv add ".[dev,web,api]"
+
+# Or with pip
+pip install -e ".[dev,web,api]"
+```
+
 ### Running Tests
 ```bash
 make test           # Run with coverage report
 pytest tests/ -v    # Verbose test output
 ```
+
+**Note:** Tests requiring hardware (camera, GPIO) should be run on the Raspberry Pi. Tests for protocol modules can run anywhere. Hardware-dependent tests will be skipped on systems without required dependencies.
 
 ### Code Quality
 ```bash
@@ -273,7 +503,7 @@ spidev and picamera2 will automatically install when dependencies are installed 
 
 **Keep this codebase minimal.** Let the standard library and imported packages do the heavy lifting. This repo should be focused on **interacting with a microcontroller & peripherals** rather than defining broad patterns for such interactions.
 
-- Cross-platform development: Code works on Windows/Mac for testing, hardware-ready on RPi
+- **Testing strategy:** Run tests on the Raspberry Pi where hardware is required. Transport-agnostic modules (like protocol) can run anywhere.
 - All tool configurations (black, ruff, mypy) are pre-configured in pyproject.toml
 - Test infrastructure ready for unit and integration tests
 - Security is built-in: filename validation prevents path traversal and directory escape attacks
