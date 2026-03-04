@@ -304,9 +304,7 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Capture failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Capture failed: {str(e)}") from e
 
     @app.post("/api/camera/record/start", response_model=RecordStartResponse, tags=["Camera"])
     async def start_recording(request: RecordRequest):
@@ -348,9 +346,7 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Recording start failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Recording start failed: {str(e)}") from e
 
     @app.post("/api/camera/record/stop", response_model=RecordStopResponse, tags=["Camera"])
     async def stop_recording():
@@ -380,9 +376,7 @@ def create_app() -> FastAPI:
                 message="Recording stopped",
             )
         except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Recording stop failed: {str(e)}"
-            ) from e
+            raise HTTPException(status_code=500, detail=f"Recording stop failed: {str(e)}") from e
 
     # Global exception handler
     @app.exception_handler(HTTPException)

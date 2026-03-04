@@ -10,7 +10,7 @@ nomon runs on a small fleet of Raspberry Pi microcontrollers, each operating ind
 │                                                             │
 │   Mobile App          Mgmt Server           Admin (SSH)     │
 │       │                   │                      │          │
-│       │ HTTPS :8443        │ MQTT (planned)       │ Tailscale│
+│       │ HTTPS :8443        │ MQTT telemetry       │ Tailscale│
 └───────┼───────────────────┼──────────────────────┼──────────┘
         │                   │                      │
 ┌───────▼───────────────────▼──────────────────────▼──────────┐
@@ -20,7 +20,9 @@ nomon runs on a small fleet of Raspberry Pi microcontrollers, each operating ind
 │         │                               │                   │
 │   nomon.camera (picamera2)──────────────┘                   │
 │         │                                                   │
-│   HAT Drivers (Phase 3)                                     │
+│   nomon.telemetry (paho-mqtt) ──────────► MQTT broker       │
+│         │                                                   │
+│   HAT Drivers (Phase 5)                                     │
 │         │                                                   │
 │   GPIO / I2C / SPI / UART Hardware                          │
 └─────────────────────────────────────────────────────────────┘
@@ -117,6 +119,34 @@ The primary remote control interface. Mobile app and management server talk to t
 
 ---
 
+### `nomon.telemetry` — `TelemetryPublisher`
+
+A background telemetry publisher. Sends structured JSON to an MQTT broker.
+
+**Responsibilities:**
+- Discover device identity (env var → Pi serial → hostname)
+- Build a JSON telemetry payload (device ID, timestamp, nomon version, camera status)
+- Publish periodically over MQTT in a daemon background thread
+- Handle broker unavailability with exponential back-off reconnect
+- Expose a one-shot `publish_now()` for scripted or ad-hoc use
+
+**Key design decisions:**
+- Conditional `paho-mqtt` import — module is importable without paho-mqtt installed
+- Fully standalone — no coupling to `APIServer` or `StreamServer` lifecycle
+- `threading.Event` shutdown signal for clean daemon thread exit
+- Back-off: 1 s → 2 s → 4 s → … capped at 60 s; resets on successful connect
+- Camera is optional — payload `"camera"` field is `null` if no `Camera` provided
+- All config via env vars (`NOMON_MQTT_*`) or constructor arguments
+
+**Does NOT:**
+- Receive MQTT messages (subscribe)
+- Expose HTTP endpoints
+- Block the REST API
+
+**Port:** N/A — uses MQTT (default TCP 1883)
+
+---
+
 ## Data Flow — Still Capture
 
 ```
@@ -187,15 +217,16 @@ nomon.streaming
 nomon.camera
   ├── picamera2  (Linux only — conditional import)
   └── (no other runtime deps)
+
+nomon.telemetry
+  ├── nomon (for __version__)
+  ├── paho-mqtt  (optional — conditional import)
+  └── (standard library: threading, json, socket, os)
 ```
 
 ---
 
 ## Planned Additions
-
-### Phase 3 — MQTT Telemetry
-
-A background publisher thread (`nomon.telemetry`) sends structured JSON telemetry to the management server using `paho-mqtt`, with reconnect/retry logic and no impact on the REST API.
 
 ### Phase 4 — OTA Updates
 

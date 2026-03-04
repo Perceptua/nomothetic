@@ -1,0 +1,368 @@
+"""MQTT telemetry publisher for nomon fleet devices.
+
+This module provides a background publisher that periodically sends structured
+JSON telemetry to an MQTT broker. Designed to run as a daemon thread alongside
+the REST API without any coupling to the APIServer lifecycle.
+
+Classes
+-------
+TelemetryPublisher
+    Publishes device and camera telemetry over MQTT with reconnect/retry logic.
+"""
+
+import json
+import logging
+import os
+import socket
+import threading
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+try:
+    import paho.mqtt.client as mqtt
+    from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+    mqtt = None  # type: ignore
+    CallbackAPIVersion = None  # type: ignore
+
+logger = logging.getLogger(__name__)
+
+_BACKOFF_BASE: float = 1.0
+_BACKOFF_CAP: float = 60.0
+
+
+class TelemetryPublisher:
+    """Publishes structured JSON telemetry to an MQTT broker.
+
+    Runs as a daemon background thread.  Handles broker unavailability
+    with exponential back-off reconnect logic.  The publisher is fully
+    independent of ``nomon.api`` — start it alongside the API server at
+    application startup.
+
+    Parameters
+    ----------
+    broker : str
+        Hostname or IP address of the MQTT broker.
+    port : int, optional
+        TCP port of the MQTT broker (default: 1883).
+    topic : str, optional
+        MQTT topic to publish to (default: ``"nomon/telemetry"``).
+    device_id : str, optional
+        Identifier for this device.  Auto-detected if ``None``:
+        checks ``NOMON_DEVICE_ID`` env var, then ``/proc/cpuinfo``
+        (Raspberry Pi serial), then ``socket.gethostname()``.
+    camera : Camera, optional
+        Live camera instance whose status is included in the payload.
+        When ``None``, the ``"camera"`` field is published as ``null``.
+    interval : float, optional
+        Seconds between publishes (default: 30.0).
+    qos : int, optional
+        MQTT QoS level — 0, 1, or 2 (default: 1).
+
+    Raises
+    ------
+    ImportError
+        If ``paho-mqtt`` is not installed.
+
+    Examples
+    --------
+    >>> pub = TelemetryPublisher(broker="192.168.1.100")
+    >>> thread = pub.start_background()
+    >>> # ... later ...
+    >>> pub.stop()
+    >>> thread.join()
+    """
+
+    def __init__(
+        self,
+        broker: str,
+        port: int = 1883,
+        topic: str = "nomon/telemetry",
+        device_id: Optional[str] = None,
+        camera: Optional[Any] = None,
+        interval: float = 30.0,
+        qos: int = 1,
+    ) -> None:
+        if mqtt is None:
+            raise ImportError(
+                "paho-mqtt is required for telemetry. "
+                "Install with: pip install 'nomon[telemetry]'"
+            )
+
+        self.broker = broker
+        self.port = port
+        self.topic = topic
+        self.device_id = device_id or self.get_device_id()
+        self.camera = camera
+        self.interval = interval
+        self.qos = qos
+
+        self._stop_event = threading.Event()
+        self._connected = False
+        self._client: Any = self._create_client()
+
+    # -------------------------------------------------------------------------
+    # Construction helpers
+    # -------------------------------------------------------------------------
+
+    @classmethod
+    def from_env(cls, camera: Optional[Any] = None) -> "TelemetryPublisher":
+        """Create a ``TelemetryPublisher`` from environment variables.
+
+        Reads configuration from the process environment (or a ``.env``
+        file if ``python-dotenv`` has already been loaded).
+
+        Environment variables
+        ---------------------
+        NOMON_MQTT_BROKER : str
+            Broker hostname or IP (required).
+        NOMON_MQTT_PORT : int
+            Broker port (default: ``1883``).
+        NOMON_MQTT_TOPIC : str
+            Publish topic (default: ``"nomon/telemetry"``).
+        NOMON_MQTT_INTERVAL : float
+            Seconds between publishes (default: ``30.0``).
+        NOMON_DEVICE_ID : str
+            Device identifier (default: auto-detected).
+
+        Parameters
+        ----------
+        camera : Camera, optional
+            Live camera instance to include in payloads.
+
+        Returns
+        -------
+        TelemetryPublisher
+            Configured publisher instance.
+
+        Raises
+        ------
+        ValueError
+            If ``NOMON_MQTT_BROKER`` is not set.
+        """
+        broker = os.environ.get("NOMON_MQTT_BROKER", "").strip()
+        if not broker:
+            raise ValueError("NOMON_MQTT_BROKER environment variable is required for telemetry.")
+
+        port = int(os.environ.get("NOMON_MQTT_PORT", "1883"))
+        topic = os.environ.get("NOMON_MQTT_TOPIC", "nomon/telemetry")
+        interval = float(os.environ.get("NOMON_MQTT_INTERVAL", "30.0"))
+        device_id = os.environ.get("NOMON_DEVICE_ID") or None
+
+        return cls(
+            broker=broker,
+            port=port,
+            topic=topic,
+            device_id=device_id,
+            camera=camera,
+            interval=interval,
+        )
+
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
+
+    def start_background(self) -> threading.Thread:
+        """Start the telemetry publisher in a daemon background thread.
+
+        Returns
+        -------
+        threading.Thread
+            The daemon thread running the publisher loop.
+        """
+        self._stop_event.clear()
+        thread = threading.Thread(target=self._run_loop, name="nomon-telemetry", daemon=True)
+        thread.start()
+        logger.info(
+            "Telemetry publisher started (broker=%s:%d topic=%s interval=%.1fs)",
+            self.broker,
+            self.port,
+            self.topic,
+            self.interval,
+        )
+        return thread
+
+    def stop(self) -> None:
+        """Signal the publisher loop to stop.
+
+        Sets the internal stop event; the background thread will exit
+        after the current sleep interval.  Call ``thread.join()`` after
+        this to wait for a clean shutdown.
+        """
+        self._stop_event.set()
+        try:
+            self._client.disconnect()
+        except Exception:
+            pass
+        logger.info("Telemetry publisher stop requested.")
+
+    def publish_now(self) -> bool:
+        """Publish a single telemetry payload immediately.
+
+        Connects to the broker if not already connected, publishes
+        one payload, then returns.
+
+        Returns
+        -------
+        bool
+            ``True`` if the payload was published successfully,
+            ``False`` on any error.
+        """
+        try:
+            if not self._connected:
+                self._client.connect(self.broker, self.port, keepalive=60)
+                self._client.loop_start()
+                self._connected = True
+
+            payload = json.dumps(self.build_payload())
+            result = self._client.publish(self.topic, payload, qos=self.qos)
+            result.wait_for_publish()
+            logger.debug("Telemetry published to %s", self.topic)
+            return True
+        except Exception as exc:
+            logger.warning("Telemetry publish failed: %s", exc)
+            self._connected = False
+            return False
+
+    def build_payload(self) -> dict[str, Any]:
+        """Build the JSON-serialisable telemetry payload dict.
+
+        Returns
+        -------
+        dict[str, Any]
+            Payload with device ID, timestamp, nomon version, and
+            optional camera status.
+        """
+        from nomon import __version__
+
+        camera_data: Optional[dict[str, Any]] = None
+        if self.camera is not None:
+            try:
+                camera_data = {
+                    "ready": True,
+                    "recording": bool(self.camera._is_recording),
+                    "resolution": f"{self.camera.width}x{self.camera.height}",
+                    "fps": int(self.camera.fps),
+                    "encoder": str(self.camera.encoder),
+                }
+            except Exception as exc:
+                logger.warning("Could not read camera status for payload: %s", exc)
+                camera_data = {"ready": False, "error": str(exc)}
+
+        return {
+            "device_id": self.device_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "nomon_version": __version__,
+            "camera": camera_data,
+        }
+
+    @staticmethod
+    def get_device_id() -> str:
+        """Determine a unique device identifier for this Pi.
+
+        Resolution order:
+        1. ``NOMON_DEVICE_ID`` environment variable.
+        2. Raspberry Pi serial number from ``/proc/cpuinfo``.
+        3. ``socket.gethostname()``.
+
+        Returns
+        -------
+        str
+            Device identifier string.
+        """
+        env_id = os.environ.get("NOMON_DEVICE_ID", "").strip()
+        if env_id:
+            return env_id
+
+        # Try Raspberry Pi serial number
+        try:
+            with open("/proc/cpuinfo") as f:
+                for line in f:
+                    if line.startswith("Serial"):
+                        serial = line.split(":")[-1].strip().lstrip("0")
+                        if serial:
+                            return f"pi-{serial}"
+        except OSError:
+            pass
+
+        return socket.gethostname()
+
+    # -------------------------------------------------------------------------
+    # Internal helpers
+    # -------------------------------------------------------------------------
+
+    def _create_client(self) -> Any:
+        """Create and configure a paho-mqtt Client instance.
+
+        Returns
+        -------
+        paho.mqtt.client.Client
+            Configured MQTT client.
+        """
+        client = mqtt.Client(
+            callback_api_version=CallbackAPIVersion.VERSION2,
+            client_id=f"nomon-{self.device_id}",
+        )
+        client.on_connect = self._on_connect
+        client.on_disconnect = self._on_disconnect
+        return client
+
+    def _on_connect(
+        self,
+        client: Any,
+        userdata: Any,
+        connect_flags: Any,
+        reason_code: Any,
+        properties: Any,
+    ) -> None:
+        """Handle successful broker connection."""
+        if reason_code.is_failure:
+            logger.warning("MQTT connect refused: %s", reason_code)
+            self._connected = False
+        else:
+            logger.info("MQTT connected to %s:%d", self.broker, self.port)
+            self._connected = True
+
+    def _on_disconnect(
+        self,
+        client: Any,
+        userdata: Any,
+        disconnect_flags: Any,
+        reason_code: Any,
+        properties: Any,
+    ) -> None:
+        """Handle broker disconnection."""
+        logger.info("MQTT disconnected (reason: %s)", reason_code)
+        self._connected = False
+
+    def _run_loop(self) -> None:
+        """Background thread: connect, publish periodically, reconnect on failure."""
+        backoff = _BACKOFF_BASE
+
+        while not self._stop_event.is_set():
+            if not self._connected:
+                try:
+                    self._client.connect(self.broker, self.port, keepalive=60)
+                    self._client.loop_start()
+                    self._connected = True
+                    backoff = _BACKOFF_BASE  # reset on successful connect
+                except Exception as exc:
+                    logger.warning("MQTT connect failed (%s). Retrying in %.1fs.", exc, backoff)
+                    self._stop_event.wait(timeout=backoff)
+                    backoff = min(backoff * 2, _BACKOFF_CAP)
+                    continue
+
+            # Publish telemetry
+            try:
+                payload = json.dumps(self.build_payload())
+                self._client.publish(self.topic, payload, qos=self.qos)
+                logger.debug("Telemetry published to %s", self.topic)
+            except Exception as exc:
+                logger.warning("Telemetry publish error: %s", exc)
+                self._connected = False
+
+            # Wait for next publish (interruptible by stop())
+            self._stop_event.wait(timeout=self.interval)
+
+        self._client.loop_stop()
+        logger.info("Telemetry publisher stopped.")

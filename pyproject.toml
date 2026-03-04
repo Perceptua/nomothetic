@@ -44,6 +44,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0",
     "types-pyserial>=3.5.0.11",
+    "paho-mqtt>=2.0",
 ]
 docs = [
     "sphinx>=5.0",
@@ -58,6 +59,9 @@ api = [
     "python-multipart>=0.0.6",
     "cryptography>=41.0",
     "python-dotenv>=1.0",
+]
+telemetry = [
+    "paho-mqtt>=2.0",
 ]
 
 [project.urls]
@@ -80,6 +84,8 @@ include = '\.pyi?$'
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.ruff.lint]
 select = [
     "E",      # pycodestyle errors
     "W",      # pycodestyle warnings
@@ -93,7 +99,7 @@ ignore = [
     "E501",   # line too long (handled by black)
 ]
 
-[tool.ruff.isort]
+[tool.ruff.lint.isort]
 known-first-party = ["nomon"]
 
 [tool.mypy]
