@@ -22,9 +22,9 @@ nomon runs on a small fleet of Raspberry Pi microcontrollers, each operating ind
 │         │                                                   │
 │   nomon.telemetry (paho-mqtt) ──────────► MQTT broker       │
 │         │                                                   │
-│   HAT Drivers (Phase 5)                                     │
-│         │                                                   │
-│   GPIO / I2C / SPI / UART Hardware                          │
+│   nomon.api ─── IPC ───► nomon-hat (Rust daemon, Phase 5)   │
+│                             │                                │
+│                       GPIO / I2C / SPI / UART Hardware       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -261,11 +261,51 @@ nomon.updater
 `git fetch + reset --hard` + restart via a systemd service.  Pre-flight import
 checks guard against broken updates; automatic git rollback runs if the check fails.
 
-### Phase 5 — HAT Module Driver
+### Phase 5 — HAT Module Driver (Rust, Separate Repo)
 
-A new module (`nomon.hat` or named after the specific hardware) will follow the same pattern:
+A standalone Rust daemon in a new `nomon-hat` repository (see ADR-006). Runs
+as `nomon-hat.service` and communicates with `nomon.api` via local IPC (Unix
+domain socket at `/run/nomon-hat.sock` or localhost HTTP fallback). Python was
+evaluated and rejected for HAT drivers due to GIL-induced latency in
+timing-critical GPIO/SPI operations.
 
-- Conditional imports for any Linux-only HAT libraries
-- Raises `RuntimeError` at instantiation if hardware unavailable
-- Exposes a clean Python interface (not HTTP)
-- `nomon.api` grows new HAT endpoints under `/api/hat/...`
+`nomon.api` HAT endpoints (`/api/hat/...`) proxy requests to the Rust daemon.
+If the daemon is not running, HAT endpoints return `503 Service Unavailable`.
+
+The interface contract (JSON schema) will be documented here when HAT hardware
+is identified.
+
+### Phase 6 — AWS IoT Jobs Migration (Planned)
+
+Replaces the `nomon.updater` polling-based OTA strategy with push-based
+updates via AWS IoT Jobs (see ADR-007). A single job document coordinates
+versions for both the Python `nomon` package and the Rust `nomon-hat` binary.
+`nomon.telemetry` may consolidate its MQTT connection with the IoT Jobs
+subscription to use a single AWS IoT Core broker.
+
+---
+
+## Repository Strategy
+
+All Python modules remain in this single repository. The `UpdateManager`
+(Phase 4) relies on a single-repo atomic update (`git fetch + reset --hard`);
+splitting Python modules would break atomicity and require dual-manifest OTA.
+
+The Rust HAT daemon (`nomon-hat`) lives in a separate repository because it
+produces a different build artifact (compiled binary), uses a different update
+mechanism (artifact download, not git), runs as a separate systemd service,
+and has an independent release cadence. See ADR-006 for the full rationale.
+
+```
+nomon/              ← Python monorepo (this repo)
+  nomon.camera
+  nomon.streaming
+  nomon.api
+  nomon.telemetry
+  nomon.updater
+
+nomon-hat/          ← Rust repo (Phase 5, separate)
+  Cargo.toml
+  src/main.rs
+  systemd/nomon-hat.service
+```

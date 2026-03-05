@@ -10,7 +10,8 @@
 | 2.5 | Auth & Rate Limiting | 🔲 Optional / Deferred |
 | 3 | MQTT Telemetry | ✅ Complete |
 | 4 | OTA Update Mechanism | ✅ Complete |
-| 5 | HAT Module Driver | 🔲 Planned |
+| 5 | HAT Module Driver (Rust) | 🔲 Planned |
+| 6 | AWS IoT Jobs Migration | 🔲 Planned |
 
 ---
 
@@ -116,22 +117,46 @@ Adds security layers on top of the existing API. Can be deferred since Tailscale
 
 ---
 
-### Phase 5 — HAT Module Driver
+### Phase 5 — HAT Module Driver (Rust, Separate Repo)
 
 **Prerequisites:** Identify the specific HAT hardware module(s) to be used.
 
+**Language & repo:** Rust, in a new `nomon-hat` repository (see ADR-006).
+Rust is chosen for deterministic latency in GPIO/SPI timing-critical
+operations. The Python modules remain in this repo — they are I/O-bound
+and gain nothing from a Rust conversion.
+
 **Candidate deliverables:**
-- [ ] `nomon.hat` (or named after hardware) module with conditional imports
-- [ ] Driver class following the `Camera` pattern (raises `RuntimeError` if hardware unavailable)
-- [ ] REST endpoints under `/api/hat/...` in `nomon.api`
-- [ ] Tests with mocked hardware
+- [ ] `nomon-hat` Rust binary using `rppal` for GPIO/SPI/I2C access
+- [ ] Runs as `nomon-hat.service` (separate systemd unit)
+- [ ] Local IPC interface (Unix domain socket at `/run/nomon-hat.sock`, JSON protocol)
+- [ ] REST endpoints under `/api/hat/...` in `nomon.api` that proxy to the Rust daemon
+- [ ] OTA binary deploy script (artifact download + SHA-256 verify + atomic swap)
 - [ ] Hardware discovery guide in `docs/`
 
 **Design constraints:**
-- SPI access via `spidev` (Linux-only conditional import)
-- I2C access via `smbus2`
-- GPIO via `gpiozero` (high-level) + `pigpio` (low-level daemon)
-- Must be testable on Windows/macOS with mocks
+- Cross-compiled for `aarch64-unknown-linux-gnu` (CI uses `cross` or equivalent)
+- `nomon.api` HAT endpoints return `503 Service Unavailable` if the Rust daemon is not running
+- Interface contract (JSON schema) documented in `docs/architecture.md`
+- Python tests mock the IPC socket — testable on Windows/macOS
+
+---
+
+### Phase 6 — AWS IoT Jobs Migration (Planned)
+
+Replaces the current `nomon.updater` polling-based OTA strategy with
+push-based updates via AWS IoT Jobs. See ADR-007.
+
+**Candidate deliverables:**
+- [ ] Refactor `nomon.updater` to subscribe to AWS IoT Jobs MQTT topic
+- [ ] Artifact-based deployment (S3 download) instead of `git fetch + reset --hard`
+- [ ] Multi-repo coordination: single job document specifies versions for both `nomon` (Python) and `nomon-hat` (Rust)
+- [ ] X.509 certificate provisioning per device (replaces Tailscale-only trust for update channel)
+- [ ] Consolidate MQTT connections: telemetry + job subscription on same AWS IoT Core broker
+- [ ] Preserve existing REST endpoints (`/api/system/version`, `/api/system/update/status`, `/api/system/update/apply`)
+
+**Dependency:** AWS IoT Device SDK for Python (~5 MB). Greengrass v2 is
+explicitly **not** used due to JVM memory requirements on Pi Zero hardware.
 
 ---
 
@@ -156,3 +181,7 @@ Developed in a separate repository.
 - Version manifest endpoint (serves release metadata for OTA)
 - Object storage (S3-compatible) for release artifacts
 - Admin dashboard for fleet monitoring
+
+**AWS IoT path (Phase 6):** If AWS IoT is adopted, the management server uses
+AWS IoT Core as the MQTT broker and AWS IoT Jobs for fleet update dispatch.
+See ADR-007 and [docs/phase5_planning.md](phase5_planning.md).
