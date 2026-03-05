@@ -2,6 +2,8 @@
 
 This module provides a FastAPI-based REST API for remote camera
 operations with HTTPS/TLS support and CORS for mobile clients.
+It also exposes system version information and OTA update endpoints
+when ``nomon.updater`` is configured via environment variables.
 
 Classes
 -------
@@ -18,10 +20,11 @@ create_self_signed_cert
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +32,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from nomon.camera import Camera
+
+try:
+    from nomon.updater import UpdateManager
+except ImportError:
+    UpdateManager = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +100,35 @@ class ErrorResponse(BaseModel):
 
     success: bool = False
     error: str
+    timestamp: str
+
+
+# -- System / OTA models --
+
+
+class VersionResponse(BaseModel):
+    """Current nomon version and git information."""
+
+    version: str
+    git_hash: str
+    timestamp: str
+
+
+class UpdateStatusResponse(BaseModel):
+    """OTA update availability status."""
+
+    update_available: bool
+    current_version: str
+    latest_version: Optional[str]
+    last_checked: Optional[str]
+    timestamp: str
+
+
+class UpdateApplyResponse(BaseModel):
+    """Response after triggering an OTA update."""
+
+    success: bool
+    message: str
     timestamp: str
 
 
@@ -196,7 +233,19 @@ def create_self_signed_cert(cert_path: Path, key_path: Path) -> None:
 # Camera Server Instance (Global)
 # ============================================================================
 
+
+def _detect_repo_dir_for_api() -> Path:
+    """Return the nomon git repository root (used by version endpoint)."""
+    candidate = Path(__file__).resolve().parent
+    for _ in range(6):
+        if (candidate / ".git").is_dir():
+            return candidate
+        candidate = candidate.parent
+    return Path(__file__).resolve().parent.parent.parent
+
+
 _camera: Optional[Camera] = None
+_updater: Optional[Any] = None  # UpdateManager instance, when configured
 
 
 logger = logging.getLogger(__name__)
@@ -204,17 +253,30 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage camera initialization and cleanup."""
-    global _camera
+    """Manage camera and updater initialization and cleanup."""
+    global _camera, _updater
     # Startup: Initialize camera
     try:
         _camera = Camera()
     except RuntimeError as e:
         logger.warning("Camera initialization failed; API will run without camera: %s", e)
+
+    # Startup: Initialize updater (only if manifest URL is configured)
+    if UpdateManager is not None and os.environ.get("NOMON_UPDATE_MANIFEST_URL", "").strip():
+        try:
+            _updater = UpdateManager.from_env(camera=_camera)
+            _updater.start_background()
+            logger.info("Update manager started.")
+        except Exception as exc:
+            logger.warning("Update manager initialization failed: %s", exc)
+
     yield
+
     # Shutdown: Cleanup
     if _camera:
         _camera.close()
+    if _updater:
+        _updater.stop()
 
 
 # ============================================================================
@@ -386,6 +448,119 @@ def create_app() -> FastAPI:
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Recording stop failed: {str(e)}") from e
+
+    # ========================================================================
+    # System / OTA Endpoints
+    # ========================================================================
+
+    @app.get("/api/system/version", response_model=VersionResponse, tags=["System"])
+    async def get_version():
+        """Return the currently installed nomon version and git hash.
+
+        Returns
+        -------
+        VersionResponse
+            Version string, git HEAD hash, and UTC timestamp.
+        """
+        from nomon import __version__
+        from nomon.updater import UpdateManager as _UM
+
+        git_hash = await asyncio.to_thread(_UM._get_git_hash, _detect_repo_dir_for_api())
+        return VersionResponse(
+            version=__version__,
+            git_hash=git_hash,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+    @app.get("/api/system/update/status", response_model=UpdateStatusResponse, tags=["System"])
+    async def get_update_status():
+        """Return OTA update availability status.
+
+        Returns
+        -------
+        UpdateStatusResponse
+            Whether an update is available, current and latest versions, and
+            when the last manifest check was performed.
+        """
+        from nomon import __version__
+
+        if _updater is None:
+            return UpdateStatusResponse(
+                update_available=False,
+                current_version=__version__,
+                latest_version=None,
+                last_checked=None,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+
+        with _updater._lock:
+            available = _updater.update_available
+            manifest = _updater.latest_manifest
+            last_checked = _updater.last_checked
+
+        latest_version = manifest.get("version") if manifest else None
+        last_checked_str = last_checked.isoformat() if last_checked else None
+
+        return UpdateStatusResponse(
+            update_available=available,
+            current_version=__version__,
+            latest_version=latest_version,
+            last_checked=last_checked_str,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+
+    @app.post("/api/system/update/apply", response_model=UpdateApplyResponse, tags=["System"])
+    async def apply_update():
+        """Trigger an OTA update.
+
+        Applies the latest available update: fetches the remote ref, verifies
+        the SHA, runs a pre-flight import check, then restarts the systemd
+        service.  Rolls back the git repository automatically if the pre-flight
+        check fails.
+
+        Returns
+        -------
+        UpdateApplyResponse
+            Success status and descriptive message.
+
+        Raises
+        ------
+        HTTPException
+            ``503`` if no update manager is configured or no update is
+            available; ``409`` if a camera recording is in progress;
+            ``500`` on update failure.
+        """
+        if _updater is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Update manager not configured. Set NOMON_UPDATE_MANIFEST_URL.",
+            )
+
+        with _updater._lock:
+            available = _updater.update_available
+            latest_manifest = _updater.latest_manifest
+
+        if not available or latest_manifest is None:
+            raise HTTPException(status_code=503, detail="No update available.")
+
+        try:
+            await asyncio.to_thread(_updater.apply_update)
+        except RuntimeError as exc:
+            msg = str(exc)
+            lowered = msg.lower()
+            if "recording" in lowered:
+                raise HTTPException(status_code=409, detail=msg) from exc
+            if "no update available" in lowered or "rollback point" in lowered:
+                raise HTTPException(status_code=503, detail=msg) from exc
+            raise HTTPException(status_code=500, detail=msg) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Update failed: {exc}") from exc
+
+        return UpdateApplyResponse(
+            success=True,
+            message="Update applied. Service restart triggered.",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
 
     # Global exception handler
     @app.exception_handler(HTTPException)

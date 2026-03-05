@@ -3,7 +3,7 @@
 Tests cover endpoint functionality, error handling, and CORS behavior.
 """
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -404,3 +404,198 @@ def test_camera_status_model():
     )
     assert status.camera_ready is True
     assert status.recording is False
+
+
+# ============================================================================
+# System / OTA Endpoints
+# ============================================================================
+
+
+@pytest.fixture
+def mock_updater():
+    """Return a minimal mock UpdateManager."""
+    from datetime import datetime, timezone
+
+    from nomon.updater import UpdateManager
+
+    mgr = MagicMock(spec=UpdateManager)
+    mgr._lock = __import__("threading").Lock()
+    mgr.update_available = False
+    mgr.latest_manifest = None
+    mgr.last_checked = datetime(2026, 3, 4, 12, 0, 0, tzinfo=timezone.utc)
+    return mgr
+
+
+def test_version_endpoint_returns_version(client):
+    """GET /api/system/version returns version, git_hash, and timestamp."""
+    from nomon.updater import UpdateManager
+
+    with patch.object(UpdateManager, "_get_git_hash", return_value="abc123"):
+        response = client.get("/api/system/version")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "version" in data
+    assert "git_hash" in data
+    assert "timestamp" in data
+    assert data["git_hash"] == "abc123"
+
+
+def test_version_endpoint_version_matches_package(client):
+    """GET /api/system/version version field matches nomon.__version__."""
+    import nomon
+    from nomon.updater import UpdateManager
+
+    with patch.object(UpdateManager, "_get_git_hash", return_value="abc"):
+        response = client.get("/api/system/version")
+
+    assert response.json()["version"] == nomon.__version__
+
+
+def test_update_status_without_updater(client):
+    """GET /api/system/update/status returns sensible defaults when no updater configured."""
+    import nomon.api
+
+    nomon.api._updater = None
+    response = client.get("/api/system/update/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["update_available"] is False
+    assert data["latest_version"] is None
+    assert data["last_checked"] is None
+
+
+def test_update_status_no_update_available(client, mock_updater):
+    """GET /api/system/update/status returns False when no update is queued."""
+    import nomon.api
+
+    mock_updater.update_available = False
+    mock_updater.latest_manifest = None
+    nomon.api._updater = mock_updater
+
+    response = client.get("/api/system/update/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["update_available"] is False
+    assert data["latest_version"] is None
+
+    nomon.api._updater = None
+
+
+def test_update_status_update_available(client, mock_updater):
+    """GET /api/system/update/status reflects available update."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "99.0.0"}
+    nomon.api._updater = mock_updater
+
+    response = client.get("/api/system/update/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["update_available"] is True
+    assert data["latest_version"] == "99.0.0"
+
+    nomon.api._updater = None
+
+
+def test_apply_update_without_updater_returns_503(client):
+    """POST /api/system/update/apply returns 503 when updater not configured."""
+    import nomon.api
+
+    nomon.api._updater = None
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+    assert "NOMON_UPDATE_MANIFEST_URL" in response.json()["error"]
+
+
+def test_apply_update_no_update_available_returns_503(client, mock_updater):
+    """POST /api/system/update/apply returns 503 when no update is queued."""
+    import nomon.api
+
+    mock_updater.update_available = False
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+
+    nomon.api._updater = None
+
+
+def test_apply_update_success(client, mock_updater):
+    """POST /api/system/update/apply returns 200 on success."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.return_value = True
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert "timestamp" in data
+
+    nomon.api._updater = None
+
+
+def test_apply_update_409_when_recording(client, mock_updater):
+    """POST /api/system/update/apply returns 409 when camera is recording."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("recording in progress")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 409
+
+    nomon.api._updater = None
+
+
+def test_apply_update_500_on_failure(client, mock_updater):
+    """POST /api/system/update/apply returns 500 on update error."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("git fetch failed")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 500
+
+    nomon.api._updater = None
+
+
+def test_apply_update_503_on_no_update_available_runtime_error(client, mock_updater):
+    """POST /api/system/update/apply returns 503 when apply_update raises 'no update available'."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("No update available. Call check_for_update() first.")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+
+    nomon.api._updater = None
+
+
+def test_apply_update_503_on_unknown_rollback_point(client, mock_updater):
+    """POST /api/system/update/apply returns 503 when apply_update raises 'rollback point' error."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("Cannot apply update without a valid rollback point.")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+
+    nomon.api._updater = None
+

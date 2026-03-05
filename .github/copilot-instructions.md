@@ -12,11 +12,11 @@ The package is developed on Windows/macOS but deployed on **Raspberry Pi OS (Lin
 
 ```
 Mobile App  ────►  nomon REST API (HTTPS :8443)  ────►  Camera / HAT Hardware
-                        │
-              Tailscale VPN (admin access)
-                        │
-Mgmt Server  ◄───  MQTT telemetry (planned)
-             ◄───  OTA update manifest (planned)
+                        │                                      ▲
+              Tailscale VPN (admin access)              IPC (Unix socket)
+                        │                                      │
+Mgmt Server  ◄───  MQTT telemetry               nomon-hat (Rust daemon)
+             ◄───  OTA update dispatch (AWS IoT Jobs, planned)
 ```
 
 ### Components
@@ -26,11 +26,14 @@ Mgmt Server  ◄───  MQTT telemetry (planned)
 | `nomon.camera` | `Camera` | picamera2 wrapper — still capture, video recording, MJPEG frames |
 | `nomon.streaming` | `StreamServer` | Flask HTTP MJPEG stream server (local LAN viewing) |
 | `nomon.api` | `APIServer` | FastAPI HTTPS REST server — primary remote control interface |
+| `nomon.telemetry` | `TelemetryPublisher` | paho-mqtt background telemetry publisher |
+| `nomon.updater` | `UpdateManager` | OTA update manager — manifest polling, git-based apply, rollback |
 
 ### Optional Dependency Groups (`pyproject.toml`)
 
 - `[web]` — Flask for `StreamServer`
 - `[api]` — FastAPI, uvicorn, cryptography, python-multipart, python-dotenv for `APIServer`
+- `[telemetry]` — paho-mqtt for `TelemetryPublisher`
 - `[dev]` — pytest, black, ruff, mypy for development
 
 ---
@@ -41,8 +44,8 @@ Mgmt Server  ◄───  MQTT telemetry (planned)
   - Max still: 2592×1944 @ 15.63 fps
   - Default video: 1280×720 @ 30 fps
   - Encoders: H264 (default, 5 Mbps), MJPEG
-- **HAT modules**: Not yet specified — to be determined in Phase 3
-- **GPIO**: gpiozero (high-level) + pigpio (low-level daemon) + smbus2 (I2C) + pyserial (UART) + spidev (SPI, Linux-only)
+- **HAT modules**: Phase 5 — will be implemented in Rust (`nomon-hat` separate repo, see ADR-006) for deterministic GPIO/SPI latency
+- **GPIO**: gpiozero (high-level) + pigpio (low-level daemon) + smbus2 (I2C) + pyserial (UART) + spidev (SPI, Linux-only) — accessed from Rust via `rppal` in Phase 5
 - **Networking**: Tailscale VPN for admin access; self-signed TLS certs for HTTPS
 
 ---
@@ -91,7 +94,7 @@ Mgmt Server  ◄───  MQTT telemetry (planned)
 - Hardware (picamera2, Flask, FastAPI) is mocked — tests must pass on non-Pi, non-Linux systems
 - Use `pytest` markers for any tests that require hardware
 - Target: all tests pass with `make test` on Windows/macOS
-- Current test count: 63 (20 camera + 14 streaming + 26 API + 3 integration)
+- Current test count: 146 (20 camera + 14 streaming + 38 API + 3 integration + 23 telemetry + 48 updater)
 
 ---
 
@@ -122,9 +125,8 @@ make clean         # remove __pycache__, .egg-info, dist
 ## Planned Next Phases
 
 - **Phase 2.5** (optional): JWT auth, API key management, rate limiting, audit logging
-- **Phase 3**: MQTT telemetry publishing
-- **Phase 4**: OTA update mechanism + version manifest endpoint
-- **Phase 5**: HAT module driver(s) — identify hardware, implement control interface, add REST endpoints
+- **Phase 5**: Rust HAT/sensor drivers in separate `nomon-hat` repo (see ADR-006)
+- **Phase 6** (planned): AWS IoT Jobs migration — push-based OTA replacing manifest polling (see ADR-007)
 - **Mobile App**: Separate repository, consumes nomon REST API
 
 See [docs/roadmap.md](../docs/roadmap.md) for full detail.
