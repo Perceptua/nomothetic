@@ -527,6 +527,7 @@ def test_apply_update_success(client, mock_updater):
     import nomon.api
 
     mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
     mock_updater.apply_update.return_value = True
     nomon.api._updater = mock_updater
 
@@ -544,6 +545,7 @@ def test_apply_update_409_when_recording(client, mock_updater):
     import nomon.api
 
     mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
     mock_updater.apply_update.side_effect = RuntimeError("recording in progress")
     nomon.api._updater = mock_updater
 
@@ -558,6 +560,7 @@ def test_apply_update_500_on_failure(client, mock_updater):
     import nomon.api
 
     mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
     mock_updater.apply_update.side_effect = RuntimeError("git fetch failed")
     nomon.api._updater = mock_updater
 
@@ -565,3 +568,34 @@ def test_apply_update_500_on_failure(client, mock_updater):
     assert response.status_code == 500
 
     nomon.api._updater = None
+
+
+def test_apply_update_503_on_no_update_available_runtime_error(client, mock_updater):
+    """POST /api/system/update/apply returns 503 when apply_update raises 'no update available'."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("No update available. Call check_for_update() first.")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+
+    nomon.api._updater = None
+
+
+def test_apply_update_503_on_unknown_rollback_point(client, mock_updater):
+    """POST /api/system/update/apply returns 503 when apply_update raises 'rollback point' error."""
+    import nomon.api
+
+    mock_updater.update_available = True
+    mock_updater.latest_manifest = {"version": "1.1.0", "git_sha": "abc123"}
+    mock_updater.apply_update.side_effect = RuntimeError("Cannot apply update without a valid rollback point.")
+    nomon.api._updater = mock_updater
+
+    response = client.post("/api/system/update/apply")
+    assert response.status_code == 503
+
+    nomon.api._updater = None
+

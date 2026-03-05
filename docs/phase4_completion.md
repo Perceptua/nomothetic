@@ -67,7 +67,7 @@ Added to `nomon.api`:
 |--------|------|-------------|
 | `GET` | `/api/system/version` | Current version + git hash + UTC timestamp |
 | `GET` | `/api/system/update/status` | `update_available`, versions, `last_checked` |
-| `POST` | `/api/system/update/apply` | Trigger update; 409 if recording/no update |
+| `POST` | `/api/system/update/apply` | Trigger update; 409 if recording, 503 if no updater or no update available |
 
 ---
 
@@ -75,7 +75,7 @@ Added to `nomon.api`:
 
 ### Source (`src/nomon/updater.py`)
 
-~420 lines of production code. `UpdateManager` public API:
+`UpdateManager` public API:
 
 | Method | Description |
 |--------|-------------|
@@ -226,6 +226,6 @@ adds significant complexity for limited benefit.  The pre-flight check — runni
 
 ### Phase 5 — HAT Module Driver
 
-- `nomon.hat` (or hardware-specific name) module with conditional imports
-- Driver class following the `Camera` pattern
-- REST endpoints under `/api/hat/...`
+- Standalone Rust `nomon-hat` daemon in a separate repository (see ADR-006)
+- Local integration between `nomon` and `nomon-hat` (daemon process manages all HAT I/O)
+- REST endpoints under `/api/hat/...` in `nomon.api` acting as a thin adapter to the daemon

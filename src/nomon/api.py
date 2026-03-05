@@ -538,16 +538,20 @@ def create_app() -> FastAPI:
 
         with _updater._lock:
             available = _updater.update_available
+            latest_manifest = _updater.latest_manifest
 
-        if not available:
+        if not available or latest_manifest is None:
             raise HTTPException(status_code=503, detail="No update available.")
 
         try:
             await asyncio.to_thread(_updater.apply_update)
         except RuntimeError as exc:
             msg = str(exc)
-            if "recording" in msg.lower():
+            lowered = msg.lower()
+            if "recording" in lowered:
                 raise HTTPException(status_code=409, detail=msg) from exc
+            if "no update available" in lowered or "rollback point" in lowered:
+                raise HTTPException(status_code=503, detail=msg) from exc
             raise HTTPException(status_code=500, detail=msg) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Update failed: {exc}") from exc

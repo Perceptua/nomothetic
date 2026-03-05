@@ -370,6 +370,18 @@ def test_apply_update_raises_on_missing_ref_in_manifest():
         mgr.apply_update()
 
 
+def test_apply_update_aborts_when_rollback_point_unknown():
+    mgr = _make_manager()
+    mgr.update_available = True
+    mgr.latest_manifest = _manifest(git_sha="newsha")
+
+    with (
+        patch.object(UpdateManager, "_get_git_hash", return_value="unknown"),
+    ):
+        with pytest.raises(RuntimeError, match="rollback point"):
+            mgr.apply_update()
+
+
 def test_apply_update_rolls_back_on_preflight_failure():
     mgr = _make_manager()
     mgr.update_available = True

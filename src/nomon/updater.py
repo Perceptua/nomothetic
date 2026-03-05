@@ -331,6 +331,9 @@ class UpdateManager:
 
         # --- Record rollback point ---
         prev_hash = self._get_git_hash(self.repo_dir)
+        if prev_hash == "unknown":
+            logger.error("Cannot apply update: unable to determine current git hash for rollback.")
+            raise RuntimeError("Cannot apply update without a valid rollback point.")
         logger.info("Applying update to %s (rollback point: %s)", git_ref, prev_hash)
 
         # --- Pull ---
