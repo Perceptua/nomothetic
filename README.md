@@ -15,7 +15,7 @@ This Python package provides peripheral control, HTTPS REST API, MQTT telemetry,
 | `nomon.api` | `APIServer` | FastAPI HTTPS REST server — primary remote control interface |
 | `nomon.telemetry` | `TelemetryPublisher` | paho-mqtt background telemetry publisher |
 | `nomon.updater` | `UpdateManager` | OTA update manager — manifest polling, git-based apply, rollback |
-| `nomon.hat` | `HatClient` | IPC client for the `nomon-hat` Rust daemon *(Phase 5, planned)* |
+| *(planned)* | *(planned)* | HAT IPC client for the future `nomon-hat` Rust daemon *(Phase 5; Python client not yet implemented, module not available in current release)* |
 
 See [docs/architecture.md](docs/architecture.md) for a full system diagram and module responsibilities.
 
@@ -39,7 +39,7 @@ pip install "nomon[telemetry]"
 pip install "nomon[api,web,telemetry]"
 ```
 
-> **Note:** Hardware dependencies (`picamera2`, `spidev`, `pigpio`) are Linux-only and install only on Raspberry Pi OS. The package is importable on Windows/macOS for development and testing.
+> **Note:** Some hardware dependencies (e.g., `picamera2`, `spidev`) are Linux-only, and camera/SPI functionality is only supported on Raspberry Pi OS. The package remains importable on Windows/macOS for development and testing.
 
 ---
 
@@ -71,7 +71,7 @@ stream.start()  # http://<pi-ip>:8000/stream
 from nomon.telemetry import TelemetryPublisher
 
 pub = TelemetryPublisher(broker="mqtt.example.com", topic="nomon/telemetry")
-pub.start()  # daemon thread; publishes a JSON payload every 60 s by default
+pub.start_background()  # daemon thread; publishes a JSON payload every 30 s by default
 ```
 
 Configured via `NOMON_MQTT_*` environment variables. See [docs/phase3_completion.md](docs/phase3_completion.md) for the full variable reference.
@@ -82,7 +82,7 @@ Configured via `NOMON_MQTT_*` environment variables. See [docs/phase3_completion
 from nomon.updater import UpdateManager
 
 mgr = UpdateManager.from_env()  # configure via NOMON_UPDATE_* env vars
-mgr.start()  # daemon thread; polls manifest and optionally auto-applies updates
+mgr.start_background()  # daemon thread; polls manifest and optionally auto-applies updates
 ```
 
 See [docs/phase4_completion.md](docs/phase4_completion.md) for the manifest format and environment variable reference.
