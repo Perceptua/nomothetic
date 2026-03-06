@@ -30,7 +30,7 @@ Options evaluated for Phase 5 driver implementation:
 
 Implement HAT/sensor drivers in **Rust in a separate repository** (`nomon-hat`),
 running as its own systemd service (`nomon-hat.service`). Communication with
-`nomon.api` occurs over a **Unix domain socket at `/run/nomon-hat.sock`** using
+`nomon.api` occurs over a **Unix domain socket at `/run/nomon-hat/nomon-hat.sock`** using
 **newline-delimited JSON (NDJSON)** framing. The localhost HTTP fallback option
 is explicitly **not implemented** — the Unix socket approach is simpler, lower
 overhead, and OS-enforced process isolation is sufficient.
@@ -88,7 +88,7 @@ No Python module has external consumers or an independent release cadence.
 ## Interface Contract
 
 `nomon.api` communicates with the `nomon-hat` daemon via a **Unix domain socket
-at `/run/nomon-hat.sock`** using **newline-delimited JSON (NDJSON)** framing.
+at `/run/nomon-hat/nomon-hat.sock`** using **newline-delimited JSON (NDJSON)** framing.
 
 NDJSON was chosen over length-prefixed framing because:
 - Text-based — debuggable with `socat` or `nc`

@@ -127,7 +127,7 @@ Rust is chosen for deterministic latency in GPIO/I2C timing-critical
 operations. The Python modules remain in this repo — they are I/O-bound
 and gain nothing from a Rust conversion.
 
-**IPC:** Unix domain socket at `/run/nomon-hat.sock` with NDJSON framing.
+**IPC:** Unix domain socket at `/run/nomon-hat/nomon-hat.sock` with NDJSON framing.
 Full schema: [docs/hat_ipc_schema.md](hat_ipc_schema.md).
 Python client: `nomon.hat.HatClient` — see [docs/hat_python_client.md](hat_python_client.md).
 Rust crate plan: [docs/nomon_hat_crate.md](nomon_hat_crate.md).

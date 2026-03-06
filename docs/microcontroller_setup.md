@@ -160,7 +160,7 @@ sudo mkdir -p /etc/nomon-hat
 sudo tee /etc/nomon-hat/config.toml <<'EOF'
 i2c_bus = 1
 hat_address = 0x14
-socket_path = "/run/nomon-hat.sock"
+socket_path = "/run/nomon-hat/nomon-hat.sock"
 socket_mode = 0o660
 log_level = "info"
 servo_default_ttl_ms = 500
@@ -186,18 +186,18 @@ sudo systemctl status nomon-hat
 
 # Send a health request manually (requires socat)
 echo '{"id":"1","method":"health","params":{}}' | \
-  socat - UNIX-CONNECT:/run/nomon-hat.sock
+  socat - UNIX-CONNECT:/run/nomon-hat/nomon-hat.sock
 # Expected: {"id":"1","ok":true,"result":{"status":"ok",...}}
 ```
 
 ### Configure nomon to use the socket
 
 Set the socket path in the nomon environment file if it differs from the
-default `/run/nomon-hat.sock`:
+default `/run/nomon-hat/nomon-hat.sock`:
 
 ```bash
 # /home/pi/nomon/.env (example)
-NOMON_HAT_SOCKET_PATH=/run/nomon-hat.sock
+NOMON_HAT_SOCKET_PATH=/run/nomon-hat/nomon-hat.sock
 ```
 
 nomon will surface `503 Service Unavailable` from any `/api/hat/...` endpoint

@@ -23,7 +23,7 @@ nomon runs on a small fleet of Raspberry Pi microcontrollers, each operating ind
 │   nomon.telemetry (paho-mqtt) ────────────► MQTT broker         │
 │         │                                                       │
 │   nomon.hat.HatClient                                           │
-│         │  NDJSON over Unix socket (/run/nomon-hat.sock)        │
+│         │  NDJSON over Unix socket (/run/nomon-hat/nomon-hat.sock)   │
 │         ▼                                                       │
 │   nomon-hat.service (Rust daemon)                               │
 │         │  rppal (pure-Rust I2C/GPIO)                           │
@@ -158,7 +158,7 @@ The IPC client for the `nomon-hat` Rust daemon. See
 [docs/hat_python_client.md](hat_python_client.md) for the full module design.
 
 **Responsibilities:**
-- Open and maintain a connection to `/run/nomon-hat.sock`
+- Open and maintain a connection to `/run/nomon-hat/nomon-hat.sock`
 - Serialise requests and deserialise responses (NDJSON)
 - Expose typed Python methods (`get_battery_voltage`, `set_servo_angle`, etc.)
 - Raise `HatConnectionError` if the daemon is not running
@@ -341,7 +341,7 @@ checks guard against broken updates; automatic git rollback runs if the check fa
 
 A standalone Rust daemon in a new `nomon-hat` repository (see ADR-006). Runs
 as `nomon-hat.service` and communicates with `nomon.api` via a local Unix
-domain socket at `/run/nomon-hat.sock`. Python was evaluated and rejected for
+domain socket at `/run/nomon-hat/nomon-hat.sock`. Python was evaluated and rejected for
 HAT drivers due to GIL-induced latency in timing-critical GPIO/I2C operations.
 
 **Hardware confirmed:** SunFounder Robot HAT V4 on I2C bus 1 at address `0x14`.

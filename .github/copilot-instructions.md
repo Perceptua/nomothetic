@@ -53,7 +53,7 @@ Mgmt Server  ◄───  MQTT telemetry               nomon-hat (Rust daemon)
   - Battery ADC: channel A4, scaling `battery_v = adc_voltage × 3`
   - SPI nodes exist (`/dev/spidev0.0`, `/dev/spidev0.1`) but HAT is primarily I2C
 - **HAT code location**: **All hardware control lives in the `nomon-hat` Rust daemon** (separate repo, Phase 5). The Python `nomon` package connects to it via `nomon.hat.HatClient` over a Unix domain socket. Never add I2C register writes, ADC formulae, or GPIO BCM numbers to the Python codebase.
-- **IPC**: Unix domain socket at `/run/nomon-hat.sock`, NDJSON framing. Schema: `docs/hat_ipc_schema.md`.
+- **IPC**: Unix domain socket at `/run/nomon-hat/nomon-hat.sock`, NDJSON framing. Schema: `docs/hat_ipc_schema.md`.
 - **GPIO**: accessed only from Rust (`rppal`) via `nomon-hat`. Python never touches GPIO directly.
 
 ---

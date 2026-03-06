@@ -15,7 +15,7 @@ must implement this schema exactly; changes require coordinated releases.
 | Property | Value |
 |----------|-------|
 | Mechanism | Unix domain socket (SOCK_STREAM) |
-| Default path | `/run/nomon-hat.sock` |
+| Default path | `/run/nomon-hat/nomon-hat.sock` |
 | Config override | `NOMON_HAT_SOCKET_PATH` env var |
 | Direction | Client-initiated (nomon.api connects; nomon-hat listens) |
 | Connections | Short-lived per-request or persistent; daemon accepts multiple |
@@ -96,7 +96,7 @@ short UUID prefix).
 | `INVALID_PARAMS` | One or more required params are missing or out of range |
 | `HARDWARE_ERROR` | I2C/SPI/GPIO operation failed at the OS level |
 | `NOT_READY` | Daemon is initialising; retry after a short delay |
-| `SERVO_LEASE_EXPIRED` | Servo command rejected — TTL has elapsed without refresh |
+| `SERVO_LEASE_EXPIRED` | Servo lease TTL elapsed — servo channel idled (pulse_us=0) until a new command is issued |
 | `INTERNAL_ERROR` | Unexpected daemon error (bug) |
 
 ---
@@ -115,6 +115,7 @@ Returns daemon liveness and hardware connection status.
 **Response (`result`):**
 ```json
 {
+  "schema_version": "1.0.0",
   "status": "ok",
   "version": "0.1.0",
   "hat_address": "0x14",
@@ -125,6 +126,7 @@ Returns daemon liveness and hardware connection status.
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `schema_version` | string | IPC schema semver (see [Versioning](#versioning)); client should verify on connect |
 | `status` | `"ok"` \| `"degraded"` | `"ok"` if I2C link is up; `"degraded"` otherwise |
 | `version` | string | nomon-hat semver |
 | `hat_address` | string | I2C address in use (hex string, e.g. `"0x14"`) |
@@ -276,7 +278,7 @@ while holding_position:
 
 ```bash
 # Connect to daemon socket interactively
-socat - UNIX-CONNECT:/run/nomon-hat.sock
+socat - UNIX-CONNECT:/run/nomon-hat/nomon-hat.sock
 
 # Type each line and press Enter:
 {"id":"1","method":"health","params":{}}\n
@@ -305,8 +307,9 @@ nomon-hat application versions:
 | Add new method | Minor |
 | Remove method, rename field, change type | Major |
 
-The `health` response includes a `schema_version` field (omitted from initial
-examples above for brevity) that the Python client checks on connect.
+The `health` response includes a `schema_version` field that the Python client
+checks on connect. The client should reject connections where the major version
+of `schema_version` does not match the version it was built against.
 
 ---
 

@@ -39,7 +39,7 @@ class HatClient:
     Parameters
     ----------
     socket_path : str | Path, optional
-        Path to the Unix domain socket. Defaults to ``/run/nomon-hat.sock``
+        Path to the Unix domain socket. Defaults to ``/run/nomon-hat/nomon-hat.sock``
         or the value of the ``NOMON_HAT_SOCKET_PATH`` environment variable.
     timeout_s : float, optional
         Per-request read timeout in seconds. Default: 2.0.

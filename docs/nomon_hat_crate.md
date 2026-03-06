@@ -77,7 +77,7 @@ Loads configuration from (in priority order):
 pub struct Config {
     pub i2c_bus: u8,                   // default: 1
     pub hat_address: u8,               // default: 0x14
-    pub socket_path: PathBuf,          // default: /run/nomon-hat.sock
+    pub socket_path: PathBuf,          // default: /run/nomon-hat/nomon-hat.sock
     pub socket_mode: u32,              // default: 0o660
     pub log_level: String,             // default: "info"
     pub servo_default_ttl_ms: u64,     // default: 500
@@ -268,10 +268,10 @@ tempfile = "3"
 |----------|---------|-------------|
 | `NOMON_HAT_I2C_BUS` | `1` | Linux I2C bus number |
 | `NOMON_HAT_ADDRESS` | `0x14` | Robot HAT I2C device address |
-| `NOMON_HAT_SOCKET_PATH` | `/run/nomon-hat.sock` | Unix socket path |
+| `NOMON_HAT_SOCKET_PATH` | `/run/nomon-hat/nomon-hat.sock` | Unix socket path |
 | `NOMON_HAT_SOCKET_MODE` | `0660` | Socket file permissions (octal) |
 | `NOMON_HAT_LOG_LEVEL` | `info` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
-| `NOMON_HAT_SERVO_TTL_MS` | `500` | Default servo lease TTL in milliseconds |
+| `NOMON_HAT_SERVO_DEFAULT_TTL_MS` | `500` | Default servo lease TTL in milliseconds |
 | `NOMON_HAT_WATCHDOG_POLL_MS` | `100` | TTL watchdog polling interval in milliseconds |
 
 ### Config File (`/etc/nomon-hat/config.toml`)
@@ -279,7 +279,7 @@ tempfile = "3"
 ```toml
 i2c_bus = 1
 hat_address = 0x14
-socket_path = "/run/nomon-hat.sock"
+socket_path = "/run/nomon-hat/nomon-hat.sock"
 socket_mode = 0o660
 log_level = "info"
 servo_default_ttl_ms = 500
@@ -320,7 +320,7 @@ the [`cross`](https://github.com/cross-rs/cross) tool:
 # .github/workflows/ci.yml (excerpt)
 - name: Build aarch64 binary
   run: |
-    cargo install cross --git https://github.com/cross-rs/cross
+    cargo install cross --version 0.2.5
     cross build --release --target aarch64-unknown-linux-gnu
 ```
 

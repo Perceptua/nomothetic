@@ -104,7 +104,7 @@ nomon-hat/          ← Separate Rust repo (Phase 5)
 ### Interface Between Rust and Python
 
 `nomon.api` communicates with `nomon-hat` via a **Unix domain socket** at
-`/run/nomon-hat.sock`. This is the confirmed approach (see ADR-006).
+`/run/nomon-hat/nomon-hat.sock`. This is the confirmed approach (see ADR-006).
 
 The Python client is `nomon.hat.HatClient`. It uses **newline-delimited JSON
 (NDJSON)** framing: each request and response is a single JSON object followed
@@ -121,9 +121,9 @@ kernel-enforced process isolation.
 ### Milestone 5.1 — IPC Schema & nomon-hat Scaffold
 
 **Deliverables:**
-- [ ] `docs/hat_ipc_schema.md` — full IPC protocol spec ✅ (done)
-- [ ] `docs/nomon_hat_crate.md` — Rust crate layout and dependency choices ✅ (done)
-- [ ] `docs/hat_python_client.md` — Python `HatClient` module design ✅ (done)
+- [x] `docs/hat_ipc_schema.md` — full IPC protocol spec
+- [x] `docs/nomon_hat_crate.md` — Rust crate layout and dependency choices
+- [x] `docs/hat_python_client.md` — Python `HatClient` module design
 - [ ] `nomon-hat` repository created with `Cargo.toml`, `src/main.rs`, systemd unit
 - [ ] `config.rs` + `ipc/` modules scaffolded (accepts connections, echoes health response)
 - [ ] CI workflow: cross-compile `aarch64-unknown-linux-gnu` binary
