@@ -5,27 +5,33 @@
 nomon runs on a small fleet of Raspberry Pi microcontrollers, each operating independently as a self-contained node. A mobile app and centralized management server interact with each Pi via its REST API.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Client Layer                                               │
-│                                                             │
-│   Mobile App          Mgmt Server           Admin (SSH)     │
-│       │                   │                      │          │
-│       │ HTTPS :8443        │ MQTT telemetry       │ Tailscale│
-└───────┼───────────────────┼──────────────────────┼──────────┘
-        │                   │                      │
-┌───────▼───────────────────▼──────────────────────▼──────────┐
-│  Raspberry Pi Node                                           │
-│                                                             │
-│   nomon.api (FastAPI/uvicorn)   StreamServer (Flask/MJPEG) │
-│         │                               │                   │
-│   nomon.camera (picamera2)──────────────┘                   │
-│         │                                                   │
-│   nomon.telemetry (paho-mqtt) ──────────► MQTT broker       │
-│         │                                                   │
-│   nomon.api ─── IPC ───► nomon-hat (Rust daemon, Phase 5)   │
-│                             │                                │
-│                       GPIO / I2C / SPI / UART Hardware       │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Client Layer                                                   │
+│                                                                 │
+│   Mobile App          Mgmt Server             Admin (SSH)       │
+│       │                   │                        │            │
+│       │ HTTPS :8443        │ MQTT telemetry         │ Tailscale  │
+└───────┼───────────────────┼────────────────────────┼────────────┘
+        │                   │                        │
+┌───────▼───────────────────▼────────────────────────▼────────────┐
+│  Raspberry Pi Zero 2 W — Debian GNU/Linux 13 (trixie)           │
+│                                                                 │
+│   nomon.api (FastAPI/uvicorn)    StreamServer (Flask/MJPEG)     │
+│         │                                │                      │
+│   nomon.camera (picamera2) ──────────────┘                      │
+│         │                                                       │
+│   nomon.telemetry (paho-mqtt) ────────────► MQTT broker         │
+│         │                                                       │
+│   nomon.hat.HatClient                                           │
+│         │  NDJSON over Unix socket (/run/nomon-hat/nomon-hat.sock)   │
+│         ▼                                                       │
+│   nomon-hat.service (Rust daemon)                               │
+│         │  rppal (pure-Rust I2C/GPIO)                           │
+│         ▼                                                       │
+│   SunFounder Robot HAT V4  ──  I2C bus 1, address 0x14         │
+│         │                                                       │
+│   OV5647 camera ── I2C bus 10/11, address 0x36 (muxed)         │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -146,7 +152,29 @@ A background telemetry publisher. Sends structured JSON to an MQTT broker.
 
 ---
 
-### `nomon.updater` — `UpdateManager`
+### `nomon.hat` — `HatClient`
+
+The IPC client for the `nomon-hat` Rust daemon. See
+[docs/hat_python_client.md](hat_python_client.md) for the full module design.
+
+**Responsibilities:**
+- Open and maintain a connection to `/run/nomon-hat/nomon-hat.sock`
+- Serialise requests and deserialise responses (NDJSON)
+- Expose typed Python methods (`get_battery_voltage`, `set_servo_angle`, etc.)
+- Raise `HatConnectionError` if the daemon is not running
+- Apply per-request timeout
+
+**Key design decisions:**
+- Contains *no hardware register logic* — all hardware knowledge is in the Rust daemon
+- `asyncio.to_thread` wraps blocking socket calls for FastAPI route handlers
+- Persistent connection with automatic reconnect on broken pipe
+- Follows the same conditional-import pattern as other `nomon` modules
+
+**Does NOT:**
+- Know about I2C addresses, PWM registers, ADC scaling
+- Run its own thread — called synchronously from route handlers (wrapped in `to_thread`)
+
+---
 
 Polls a remote version manifest and applies OTA updates.
 
@@ -209,7 +237,49 @@ Browser / LAN Client
 
 ---
 
-## Security Model
+## Data Flow — HAT Battery Voltage
+
+```
+Mobile App
+  GET /api/hat/battery
+        │
+  APIServer (FastAPI route)
+        │ asyncio.to_thread(hat_client.get_battery_voltage)
+        │
+  HatClient (nomon.hat)
+        │ {"id":"1","method":"get_battery_voltage","params":{}}\n
+        │  →  Unix socket  →  nomon-hat.service (Rust)
+        │       I2C read: bus 1, addr 0x14, ADC channel A4
+        │  ←  {"id":"1","ok":true,"result":{"voltage_v":7.42}}\n
+        │
+  APIServer
+        └─► 200 {"voltage_v": 7.42, "timestamp": "..."}
+```
+
+---
+
+## Data Flow — HAT Servo Angle
+
+```
+Mobile App
+  POST /api/hat/servo {"channel": 0, "angle_deg": 90.0}
+        │
+  APIServer (FastAPI route)
+        │ asyncio.to_thread(hat_client.set_servo_angle, 0, 90.0)
+        │
+  HatClient (nomon.hat)
+        │ {"id":"2","method":"set_servo_angle","params":{"channel":0,"angle_deg":90.0,"ttl_ms":500}}\n
+        │  →  Unix socket  →  nomon-hat.service (Rust)
+        │       I2C PWM write: pulse_us=1611 on channel 0
+        │  ←  {"id":"2","ok":true,"result":{"channel":0,"angle_deg":90.0,"pulse_us":1611}}\n
+        │
+  APIServer
+        └─► 200 {"channel": 0, "angle_deg": 90.0, "pulse_us": 1611, "timestamp": "..."}
+```
+
+---
+
+
 
 | Concern | Approach |
 |---------|----------|
@@ -225,8 +295,14 @@ Browser / LAN Client
 ## Dependency Map
 
 ```
+nomon.hat
+  ├── socket (stdlib)
+  ├── json (stdlib)
+  └── (no hardware deps — all hardware is in the Rust daemon)
+
 nomon.api
   ├── nomon.camera
+  ├── nomon.hat           (HatClient — IPC to nomon-hat daemon)
   ├── fastapi
   ├── uvicorn
   ├── pydantic
@@ -264,16 +340,23 @@ checks guard against broken updates; automatic git rollback runs if the check fa
 ### Phase 5 — HAT Module Driver (Rust, Separate Repo)
 
 A standalone Rust daemon in a new `nomon-hat` repository (see ADR-006). Runs
-as `nomon-hat.service` and communicates with `nomon.api` via local IPC (Unix
-domain socket at `/run/nomon-hat.sock` or localhost HTTP fallback). Python was
-evaluated and rejected for HAT drivers due to GIL-induced latency in
-timing-critical GPIO/SPI operations.
+as `nomon-hat.service` and communicates with `nomon.api` via a local Unix
+domain socket at `/run/nomon-hat/nomon-hat.sock`. Python was evaluated and rejected for
+HAT drivers due to GIL-induced latency in timing-critical GPIO/I2C operations.
 
-`nomon.api` HAT endpoints (`/api/hat/...`) proxy requests to the Rust daemon.
+**Hardware confirmed:** SunFounder Robot HAT V4 on I2C bus 1 at address `0x14`.
+See [docs/microcontroller_setup.md](microcontroller_setup.md) for discovery details.
+
+**IPC:** `nomon.hat.HatClient` (Python) connects to the socket and exchanges
+NDJSON messages with the Rust daemon. The full schema is defined in
+[docs/hat_ipc_schema.md](hat_ipc_schema.md).
+
+`nomon.api` HAT endpoints (`/api/hat/...`) proxy requests via `HatClient`.
 If the daemon is not running, HAT endpoints return `503 Service Unavailable`.
 
-The interface contract (JSON schema) will be documented here when HAT hardware
-is identified.
+**First milestone deliverables:** battery voltage reading + servo angle control.
+See [docs/nomon_hat_crate.md](nomon_hat_crate.md) for Rust crate structure and
+[docs/hat_python_client.md](hat_python_client.md) for the Python client design.
 
 ### Phase 6 — AWS IoT Jobs Migration (Planned)
 

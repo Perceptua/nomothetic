@@ -9,9 +9,14 @@
 ## Context
 
 Phase 5 introduces HAT module and sensor drivers. These drivers may require
-tight-latency GPIO toggling, SPI burst transfers, or protocols with
+tight-latency GPIO toggling, I2C burst transfers, or protocols with
 microsecond-precision timing. The project currently uses Python for all
 modules, and a Python-to-Rust conversion was evaluated for every module.
+
+**Hardware identified:** SunFounder Robot HAT V4 on I2C bus 1, address `0x14`
+(Raspberry Pi Zero 2 W, Debian GNU/Linux 13 / trixie). SPI nodes exist but
+the HAT is primarily I2C. The OV5647 camera sensor occupies muxed I2C buses
+10/11 at address `0x36` and must not be disturbed by HAT drivers.
 
 Options evaluated for Phase 5 driver implementation:
 
@@ -25,16 +30,22 @@ Options evaluated for Phase 5 driver implementation:
 
 Implement HAT/sensor drivers in **Rust in a separate repository** (`nomon-hat`),
 running as its own systemd service (`nomon-hat.service`). Communication with
-`nomon.api` occurs over a **local Unix domain socket** (preferred) or localhost
-HTTP as a fallback.
+`nomon.api` occurs over a **Unix domain socket at `/run/nomon-hat/nomon-hat.sock`** using
+**newline-delimited JSON (NDJSON)** framing. The localhost HTTP fallback option
+is explicitly **not implemented** — the Unix socket approach is simpler, lower
+overhead, and OS-enforced process isolation is sufficient.
+
+The full IPC schema is specified in [docs/hat_ipc_schema.md](../hat_ipc_schema.md).
+The Python client module design is in [docs/hat_python_client.md](../hat_python_client.md).
+The Rust crate layout is in [docs/nomon_hat_crate.md](../nomon_hat_crate.md).
 
 ## Rationale
 
 ### Why Rust (not Python) for HAT drivers
 
 - Python's GIL and interpreter overhead create non-deterministic latency in
-  GPIO and SPI timing-critical operations — even with `pigpio` as a C backend
-- Rust with `rppal` provides pure-Rust GPIO/SPI/I2C access with deterministic
+  GPIO and I2C timing-critical operations — even with `pigpio` as a C backend
+- Rust with `rppal` provides pure-Rust GPIO/I2C access with deterministic
   latency and memory safety, without requiring a daemon like `pigpio`
 - Compiled binary footprint (~5–15 MB) is far smaller than the Python
   interpreter + dependencies required for equivalent hardware access
@@ -76,15 +87,17 @@ No Python module has external consumers or an independent release cadence.
 
 ## Interface Contract
 
-`nomon.api` communicates with the `nomon-hat` daemon via a local IPC mechanism:
+`nomon.api` communicates with the `nomon-hat` daemon via a **Unix domain socket
+at `/run/nomon-hat/nomon-hat.sock`** using **newline-delimited JSON (NDJSON)** framing.
 
-1. **Preferred**: Unix domain socket at `/run/nomon-hat.sock` using a JSON
-   request/response protocol
-2. **Fallback**: Localhost HTTP at `http://127.0.0.1:8444`
+NDJSON was chosen over length-prefixed framing because:
+- Text-based — debuggable with `socat` or `nc`
+- No 4-byte length-field parsing required
+- Messages are short (< 1 kB); savings from length-prefix are negligible
 
-The JSON schema for this interface will be documented in `docs/architecture.md`
-when the HAT hardware is identified. `nomon.api` will expose HAT operations
-under `/api/hat/...` endpoints that proxy to the Rust daemon.
+`nomon.api` exposes HAT operations under `/api/hat/...` endpoints that call
+methods on `nomon.hat.HatClient`. The full schema and all methods are
+specified in [docs/hat_ipc_schema.md](../hat_ipc_schema.md).
 
 ## Consequences
 

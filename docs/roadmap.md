@@ -119,25 +119,38 @@ Adds security layers on top of the existing API. Can be deferred since Tailscale
 
 ### Phase 5 — HAT Module Driver (Rust, Separate Repo)
 
-**Prerequisites:** Identify the specific HAT hardware module(s) to be used.
+**Hardware confirmed:** SunFounder Robot HAT V4 on I2C bus 1, address `0x14`.
+See [docs/microcontroller_setup.md](microcontroller_setup.md) for discovery details.
 
 **Language & repo:** Rust, in a new `nomon-hat` repository (see ADR-006).
-Rust is chosen for deterministic latency in GPIO/SPI timing-critical
+Rust is chosen for deterministic latency in GPIO/I2C timing-critical
 operations. The Python modules remain in this repo — they are I/O-bound
 and gain nothing from a Rust conversion.
 
-**Candidate deliverables:**
-- [ ] `nomon-hat` Rust binary using `rppal` for GPIO/SPI/I2C access
-- [ ] Runs as `nomon-hat.service` (separate systemd unit)
-- [ ] Local IPC interface (Unix domain socket at `/run/nomon-hat.sock`, JSON protocol)
-- [ ] REST endpoints under `/api/hat/...` in `nomon.api` that proxy to the Rust daemon
-- [ ] OTA binary deploy script (artifact download + SHA-256 verify + atomic swap)
-- [ ] Hardware discovery guide in `docs/`
+**IPC:** Unix domain socket at `/run/nomon-hat/nomon-hat.sock` with NDJSON framing.
+Full schema: [docs/hat_ipc_schema.md](hat_ipc_schema.md).
+Python client: `nomon.hat.HatClient` — see [docs/hat_python_client.md](hat_python_client.md).
+Rust crate plan: [docs/nomon_hat_crate.md](nomon_hat_crate.md).
+
+**Milestone 5.1 — IPC Schema & Scaffold:**
+- [x] `docs/hat_ipc_schema.md` — full IPC protocol spec
+- [x] `docs/nomon_hat_crate.md` — Rust crate layout
+- [x] `docs/hat_python_client.md` — Python client design
+- [ ] `nomon-hat` repository scaffolded; health IPC working on Pi
+
+**Milestone 5.2 — Battery + Servo (P0 deliverables):**
+- [ ] `nomon-hat`: I2C, ADC, battery voltage, PWM, servo angle + TTL watchdog
+- [ ] `nomon.hat.HatClient` with `get_battery_voltage`, `set_servo_angle`
+- [ ] `nomon.api` endpoints: `GET /api/hat/battery`, `POST /api/hat/servo`
+- [ ] Mock-socket tests in `tests/test_hat.py`
+
+**Milestone 5.3 — MCU Reset + GPIO (P1):**
+- [ ] GPIO named pins, `reset_mcu` IPC method, `POST /api/hat/reset` endpoint
+- [ ] OTA binary deploy script
 
 **Design constraints:**
-- Cross-compiled for `aarch64-unknown-linux-gnu` (CI uses `cross` or equivalent)
-- `nomon.api` HAT endpoints return `503 Service Unavailable` if the Rust daemon is not running
-- Interface contract (JSON schema) documented in `docs/architecture.md`
+- Cross-compiled for `aarch64-unknown-linux-gnu` (CI uses `cross`)
+- `nomon.api` HAT endpoints return `503 Service Unavailable` if daemon not running
 - Python tests mock the IPC socket — testable on Windows/macOS
 
 ---

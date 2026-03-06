@@ -92,6 +92,7 @@ nomon/              ← Python monorepo (this repo — keep everything here)
   nomon.api
   nomon.telemetry
   nomon.updater
+  nomon.hat         ← IPC client for nomon-hat (Phase 5)
 
 nomon-hat/          ← Separate Rust repo (Phase 5)
   Cargo.toml
@@ -102,18 +103,67 @@ nomon-hat/          ← Separate Rust repo (Phase 5)
 
 ### Interface Between Rust and Python
 
-`nomon.api` communicates with `nomon-hat` via a local IPC mechanism. Preferred
-options in order:
+`nomon.api` communicates with `nomon-hat` via a **Unix domain socket** at
+`/run/nomon-hat/nomon-hat.sock`. This is the confirmed approach (see ADR-006).
 
-1. **Unix domain socket** — Rust listens on `/run/nomon-hat.sock`;
-   `nomon.api` sends JSON requests. No port allocation, low overhead,
-   OS-enforced process isolation.
-2. **Localhost HTTP** — Rust runs an axum server on `127.0.0.1:8444`;
-   `nomon.api` calls it with `httpx`. More overhead but easier to inspect
-   with curl during development.
+The Python client is `nomon.hat.HatClient`. It uses **newline-delimited JSON
+(NDJSON)** framing: each request and response is a single JSON object followed
+by `\n`. Full schema: [docs/hat_ipc_schema.md](hat_ipc_schema.md).
 
-The interface contract (JSON schema) is documented in `docs/architecture.md`
-as a cross-repo API boundary.
+The localhost HTTP fallback option is **not implemented** — the Unix socket
+approach was chosen for its lower overhead, no port allocation, and
+kernel-enforced process isolation.
+
+---
+
+## 4 — Phase 5 Milestones
+
+### Milestone 5.1 — IPC Schema & nomon-hat Scaffold
+
+**Deliverables:**
+- [x] `docs/hat_ipc_schema.md` — full IPC protocol spec
+- [x] `docs/nomon_hat_crate.md` — Rust crate layout and dependency choices
+- [x] `docs/hat_python_client.md` — Python `HatClient` module design
+- [ ] `nomon-hat` repository created with `Cargo.toml`, `src/main.rs`, systemd unit
+- [ ] `config.rs` + `ipc/` modules scaffolded (accepts connections, echoes health response)
+- [ ] CI workflow: cross-compile `aarch64-unknown-linux-gnu` binary
+
+**Exit criteria:** `socat` health check returns `{"ok":true}` on real Pi hardware.
+
+### Milestone 5.2 — Battery + Servo Control (P0)
+
+**Deliverables (nomon-hat Rust):**
+- [ ] `hat/i2c.rs` — low-level I2C read/write helpers
+- [ ] `hat/adc.rs` — ADC channel read command scheme
+- [ ] `hat/battery.rs` — `get_battery_voltage` using ADC A4, scaling × 3
+- [ ] `hat/pwm.rs` — PWM register writes (REG_CHN, REG_PSC, REG_ARR)
+- [ ] `hat/servo.rs` — `set_servo_pulse_us` + `set_servo_angle` with TTL lease watchdog
+- [ ] IPC methods: `get_battery_voltage`, `set_servo_pulse_us`, `set_servo_angle`
+
+**Deliverables (nomon Python):**
+- [ ] `src/nomon/hat.py` — `HatClient` with `get_battery_voltage`, `set_servo_angle`
+- [ ] `tests/test_hat.py` — mock socket tests (no hardware required)
+- [ ] `nomon.api` endpoints: `GET /api/hat/battery`, `POST /api/hat/servo`
+
+**Exit criteria:** Mobile app can read battery voltage and command servo angle
+on real Pi hardware.
+
+### Milestone 5.3 — MCU Reset + GPIO (P1)
+
+**Deliverables:**
+- [ ] `hat/gpio.rs` — named GPIO pin map (D4, D5, MCURST, SW, LED)
+- [ ] `reset.rs` — MCU reset procedure (BCM5 assert/deassert)
+- [ ] IPC method: `reset_mcu`
+- [ ] `nomon.api` endpoint: `POST /api/hat/reset`
+- [ ] OTA binary deploy script (`scripts/deploy.sh`)
+
+### Milestone 5.4 — Fleet OTA for nomon-hat
+
+**Deliverables:**
+- [ ] GitHub Releases CI for `aarch64-unknown-linux-gnu` binary
+- [ ] SHA-256 artifact manifest endpoint on management server
+- [ ] `scripts/deploy.sh` for atomic binary swap
+- [ ] Phase 6 AWS IoT job document extended to include `nomon_hat_version`
 
 ---
 
