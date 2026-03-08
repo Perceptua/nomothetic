@@ -443,7 +443,7 @@ response = requests.post(
 print(response)
 ```
 
-### Development Environment (Linux)
+### Development Environment
 ```bash
 # Install with dev dependencies (no streaming or API)
 uv add . --dev
