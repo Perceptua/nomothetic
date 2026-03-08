@@ -134,7 +134,7 @@ kernel-enforced process isolation.
 - [ ] `hat/servo.rs` — `set_servo_pulse_us` + `set_servo_angle` with TTL lease watchdog
 - [ ] IPC methods: `get_battery_voltage`, `set_servo_pulse_us`, `set_servo_angle`
 
-**Deliverables (nomon Python):**
+**Deliverables (nomothetic Python):**
 - [ ] `src/nomothetic/hat.py` — `HatClient` with `get_battery_voltage`, `set_servo_angle`
 - [ ] `tests/test_hat.py` — mock socket tests (no hardware required)
 - [ ] `nomothetic.api` endpoints: `GET /api/hat/battery`, `POST /api/hat/servo`
