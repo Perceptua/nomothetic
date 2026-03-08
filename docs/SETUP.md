@@ -485,7 +485,7 @@ make test           # Run unit tests with coverage report
 pytest tests/ -v    # Verbose test output
 ```
 
-Hardware (picamera2, GPIO, HAT) is mocked — unit tests pass on any Linux machine without Pi hardware.
+Hardware (picamera2, GPIO, HAT) is mocked — unit tests pass on any non-Pi dev machine (Windows/macOS/Linux) without Pi hardware.
 
 ### Code Quality
 ```bash
