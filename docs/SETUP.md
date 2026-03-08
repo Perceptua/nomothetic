@@ -174,7 +174,7 @@ Scripts for Raspberry Pi microcontroller & peripherals with HAT (Hardware Attach
 - Flask chosen for minimal overhead:
   - Single-purpose streaming server (two endpoints)
   - No complex configuration required
-  - Cross-platform (development on Windows/Mac, production on RPi)
+  - Cross-platform: development and testing on Windows, macOS, and Linux; production on Raspberry Pi OS
   - Optional dependency keeps nomon lightweight for users who don't need streaming
 
 ### Phase 2: HTTP REST API & Authentication ✅ COMPLETE
@@ -481,11 +481,11 @@ pip install -e ".[dev,web,api]"
 
 ### Running Tests
 ```bash
-make test           # Run with coverage report
+make test           # Run unit tests with coverage report
 pytest tests/ -v    # Verbose test output
 ```
 
-**Note:** Tests requiring hardware (camera, GPIO) should be run on the Raspberry Pi. Tests for protocol modules can run anywhere. Hardware-dependent tests will be skipped on systems without required dependencies.
+Hardware (picamera2, GPIO, HAT) is mocked — unit tests pass on any non-Pi dev machine (Windows/macOS/Linux) without Pi hardware.
 
 ### Code Quality
 ```bash
@@ -493,9 +493,6 @@ make format         # Format code with black & ruff
 make lint           # Check code style
 make type-check     # Type checking
 ```
-
-### On Raspberry Pi
-spidev and picamera2 will automatically install when dependencies are installed on Linux systems.
 
 ---
 
