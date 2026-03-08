@@ -131,7 +131,7 @@ Rust crate plan: [docs/nomopractic_crate.md](nomopractic_crate.md).
 **Design constraints:**
 - Cross-compiled for `aarch64-unknown-linux-gnu` (CI uses `cross`)
 - `nomothetic.api` HAT endpoints return `503 Service Unavailable` if daemon not running
-- Python tests mock the IPC socket — testable on any Linux machine without Pi hardware
+- Python tests mock the IPC socket — testable on any developer machine without Pi hardware
 
 ---
 
